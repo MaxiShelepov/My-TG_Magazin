@@ -5140,22 +5140,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Формируем сообщение частями, избегая вложенных f-строк
 message_lines = [
-    f"✅ **Параметры установлены!**\n",
-    f"📁 **Категория:** {params['category']}\n"
-]
+    # Формируем текст сообщения без вложенных f-строк
+text = f"✅ **Параметры установлены!**\n\n"
+text += f"📁 **Категория:** {params['category']}\n"
 if params.get('subcategory'):
-    message_lines.append(f"📂 Подкатегория: {params['subcategory']}\n")
-message_lines.extend([
-    f"📝 **Тип:** {params['type']}\n",
-    f"💰 **Цена:** {price} USDT\n",
-    f"📝 **Описание:** {description}\n\n",
-    "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n",
-    "Каждый файл будет добавлен в набор для этого типа.\n\n",
-    "Для завершения нажмите '🔙 В админку'"
-])
+    text += f"📂 Подкатегория: {params['subcategory']}\n"
+text += f"📝 **Тип:** {params['type']}\n"
+text += f"💰 **Цена:** {price} USDT\n"
+text += f"📝 **Описание:** {description}\n\n"
+text += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
+text += "Каждый файл будет добавлен в набор для этого типа.\n\n"
+text += "Для завершения нажмите '🔙 В админку'"
 
 await update.message.reply_text(
-    ''.join(message_lines),
+    text,
     parse_mode='Markdown',
     reply_markup=InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
