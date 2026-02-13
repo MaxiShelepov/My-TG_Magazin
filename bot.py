@@ -5138,21 +5138,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             params['price'] = price
             params['description'] = description
             
-            await update.message.reply_text(
-                f"✅ **Параметры установлены!**\n\n"
-                f"📁 **Категория:** {params['category']}\n"
-                f"{f'📂 Подкатегория: {params['subcategory']}\n' if params.get('subcategory') else ''}"
-                f"📝 **Тип:** {params['type']}\n"
-                f"💰 **Цена:** {price} USDT\n"
-                f"📝 **Описание:** {description}\n\n"
-                "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
-                "Каждый файл будет добавлен в набор для этого типа.\n\n"
-                "Для завершения нажмите '🔙 В админку'",
-                parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
-                ])
-            )
+            # Формируем сообщение частями, избегая вложенных f-строк
+message_lines = [
+    f"✅ **Параметры установлены!**\n",
+    f"📁 **Категория:** {params['category']}\n"
+]
+if params.get('subcategory'):
+    message_lines.append(f"📂 Подкатегория: {params['subcategory']}\n")
+message_lines.extend([
+    f"📝 **Тип:** {params['type']}\n",
+    f"💰 **Цена:** {price} USDT\n",
+    f"📝 **Описание:** {description}\n\n",
+    "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n",
+    "Каждый файл будет добавлен в набор для этого типа.\n\n",
+    "Для завершения нажмите '🔙 В админку'"
+])
+await update.message.reply_text(
+    ''.join(message_lines),
+    parse_mode='Markdown',
+    reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
+    ])
+)
             
         except Exception as e:
             logger.error(f"Ошибка установки параметров массовой загрузки: {e}")
