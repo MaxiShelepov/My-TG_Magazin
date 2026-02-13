@@ -5123,41 +5123,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             
             price_str = parts[0].strip()
-description = '|'.join(parts[1:]).strip()
+            description = '|'.join(parts[1:]).strip()
 
-try:
-    price = float(price_str.replace(',', '.'))
-    if price <= 0:
-        await update.message.reply_text("❌ Цена должна быть больше 0")
-        return
-except ValueError:
-    await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
-    return
+            try:
+                price = float(price_str.replace(',', '.'))
+                if price <= 0:
+                    await update.message.reply_text("❌ Цена должна быть больше 0")
+                    return
+            except ValueError:
+                await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
+                return
 
-params = context.user_data['awaiting_bulk_upload_params']
-params['price'] = price
-params['description'] = description
+            params = context.user_data['awaiting_bulk_upload_params']
+            params['price'] = price
+            params['description'] = description
 
-# Формируем текст сообщения без вложенных f-строк
-text = f"✅ **Параметры установлены!**\n\n"
-text += f"📁 **Категория:** {params['category']}\n"
-if params.get('subcategory'):
-    text += f"📂 Подкатегория: {params['subcategory']}\n"
-text += f"📝 **Тип:** {params['type']}\n"
-text += f"💰 **Цена:** {price} USDT\n"
-text += f"📝 **Описание:** {description}\n\n"
-text += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
-text += "Каждый файл будет добавлен в набор для этого типа.\n\n"
-text += "Для завершения нажмите '🔙 В админку'"
+            # Формируем текст сообщения без вложенных f-строк
+            text = f"✅ **Параметры установлены!**\n\n"
+            text += f"📁 **Категория:** {params['category']}\n"
+            if params.get('subcategory'):
+                text += f"📂 Подкатегория: {params['subcategory']}\n"
+            text += f"📝 **Тип:** {params['type']}\n"
+            text += f"💰 **Цена:** {price} USDT\n"
+            text += f"📝 **Описание:** {description}\n\n"
+            text += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
+            text += "Каждый файл будет добавлен в набор для этого типа.\n\n"
+            text += "Для завершения нажмите '🔙 В админку'"
 
-await update.message.reply_text(
-    text,
-    parse_mode='Markdown',
-    reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
-    ])
-)
-            
+            await update.message.reply_text(
+                text,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
+                ])
+            )
         except Exception as e:
             logger.error(f"Ошибка установки параметров массовой загрузки: {e}")
             await update.message.reply_text(
