@@ -3911,15 +3911,16 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             available_files = get_available_files_count(bundle_files)
             
             await update.message.reply_text(
-                f"✅ **Файл '{document.file_name}' добавлен в существующий набор!**\n\n"
-                f"📦 **Набор:** {existing_bundle['name']}\n"
+                f"✅ **Создан новый набор! Файл '{document.file_name}' добавлен.**\n\n"
+                f"📦 **Название набора:** {new_bundle['name']}\n"
                 f"📁 **Категория:** {category}\n"
-                f"{f'📂 Подкатегория: {subcategory}\n' if subcategory else ''}"
+                f"{subcategory_text}"
                 f"📝 **Тип:** {type_}\n"
-                f"💰 **Цена:** {params.get('price', 1.11)} USDT\n"
-                f"📊 **Теперь файлов в наборе:** {len(bundle_files)}\n"
-                f"📈 **Доступно файлов:** {available_files}\n\n"
-                📤 **Можете загрузить следующий файл или нажмите '🔙 В админку' для завершения.**",
+                f"💰 **Цена:** {price} USDT за файл\n"
+                f"📝 **Описание:** {description}\n"
+                f"🆔 **ID набора:** `{product_id}`\n"
+                f"📦 **Количество файлов:** 1\n\n"
+                f"📤 Можете загрузить следующий файл или нажмите '🔙 В админку' для завершения.",  # Убрали f перед строкой, так как в ней нет переменных
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
