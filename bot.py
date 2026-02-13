@@ -3919,7 +3919,7 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
                 f"💰 **Цена:** {params.get('price', 1.11)} USDT\n"
                 f"📊 **Теперь файлов в наборе:** {len(bundle_files)}\n"
                 f"📈 **Доступно файлов:** {available_files}\n\n"
-                f"📤 **Можете загрузить следующий файл или нажмите '🔙 В админку' для завершения.**",
+                📤 **Можете загрузить следующий файл или нажмите '🔙 В админку' для завершения.**",
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
