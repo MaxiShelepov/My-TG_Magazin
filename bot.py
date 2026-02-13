@@ -5153,6 +5153,7 @@ message_lines.extend([
     "Каждый файл будет добавлен в набор для этого типа.\n\n",
     "Для завершения нажмите '🔙 В админку'"
 ])
+
 await update.message.reply_text(
     ''.join(message_lines),
     parse_mode='Markdown',
