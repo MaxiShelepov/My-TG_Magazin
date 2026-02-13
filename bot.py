@@ -5123,24 +5123,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             
             price_str = parts[0].strip()
-            description = '|'.join(parts[1:]).strip()
-            
-            try:
-                price = float(price_str.replace(',', '.'))
-                if price <= 0:
-                    await update.message.reply_text("❌ Цена должна быть больше 0")
-                    return
-            except ValueError:
-                await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
-                return
-            
-            params = context.user_data['awaiting_bulk_upload_params']
-            params['price'] = price
-            params['description'] = description
-            
-            # Формируем сообщение частями, избегая вложенных f-строк
-message_lines = [
-    # Формируем текст сообщения без вложенных f-строк
+description = '|'.join(parts[1:]).strip()
+
+try:
+    price = float(price_str.replace(',', '.'))
+    if price <= 0:
+        await update.message.reply_text("❌ Цена должна быть больше 0")
+        return
+except ValueError:
+    await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
+    return
+
+params = context.user_data['awaiting_bulk_upload_params']
+params['price'] = price
+params['description'] = description
+
+# Формируем текст сообщения без вложенных f-строк
 text = f"✅ **Параметры установлены!**\n\n"
 text += f"📁 **Категория:** {params['category']}\n"
 if params.get('subcategory'):
