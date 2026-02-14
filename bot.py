@@ -638,7 +638,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton("📈 Пополнить количество", callback_data="admin_restock")],
         [InlineKeyboardButton("🗑️ Удалить товар", callback_data="admin_delete_product")],
         [InlineKeyboardButton("💰 Пополнить баланс (админ)", callback_data="admin_add_balance")],
-        [InlineKeyboardButton("💰 Списать баланс (админ)", callback_data="admin_remove_balance")],  # НОВАЯ КНОПКА
+        [InlineKeyboardButton("💰 Списать баланс (админ)", callback_data="admin_remove_balance")],
         [InlineKeyboardButton("📊 CryptoBot Статистика", callback_data="admin_crypto_stats")],
         [InlineKeyboardButton("👥 Управление администраторами", callback_data="admin_manage_admins")],
         [InlineKeyboardButton("🎟️ Управление промокодами", callback_data="admin_manage_promocodes")],
@@ -923,7 +923,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'awaiting_subcategory_name', 'awaiting_type_name', 'awaiting_delete_category',
         'awaiting_custom_quantity', 'awaiting_admin_id', 'awaiting_type_to_category',
         'awaiting_promo_code', 'awaiting_rub_amount', 'awaiting_request_id',
-        'awaiting_preorder_quantity', 'awaiting_preorder_data', 'awaiting_admin_remove_balance'  # добавлено
+        'awaiting_preorder_quantity', 'awaiting_preorder_data', 'awaiting_admin_remove_balance'
     ]
     for key in states_to_clear:
         if key in context.user_data:
@@ -2589,7 +2589,7 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
     user_data = ensure_user_registered(user_id)
 
     # Проверка, что пользователь ещё не активировал этот промокод
-    if 'used_by' in promo and user_id in promo['used_by']:
+    if 'used_by' in promo and isinstance(promo['used_by'], list) and user_id in promo['used_by']:
         return False, "❌ Вы уже активировали этот промокод."
 
     if promo['type'] == 'balance':
@@ -2599,9 +2599,9 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
         if max_uses > 0 and promo['used_count'] >= max_uses:
             promo['active'] = False
         # Сохраняем историю использований
-        if 'used_by' not in promo:
+        if 'used_by' not in promo or not isinstance(promo['used_by'], list):
             promo['used_by'] = []
-        if 'used_at' not in promo:
+        if 'used_at' not in promo or not isinstance(promo['used_at'], list):
             promo['used_at'] = []
         promo['used_by'].append(user_id)
         promo['used_at'].append(datetime.now().isoformat())
@@ -2642,9 +2642,9 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             promo['used_count'] = used_count + 1
             if max_uses > 0 and promo['used_count'] >= max_uses:
                 promo['active'] = False
-            if 'used_by' not in promo:
+            if 'used_by' not in promo or not isinstance(promo['used_by'], list):
                 promo['used_by'] = []
-            if 'used_at' not in promo:
+            if 'used_at' not in promo or not isinstance(promo['used_at'], list):
                 promo['used_at'] = []
             promo['used_by'].append(user_id)
             promo['used_at'].append(datetime.now().isoformat())
@@ -2692,9 +2692,9 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             promo['used_count'] = used_count + 1
             if max_uses > 0 and promo['used_count'] >= max_uses:
                 promo['active'] = False
-            if 'used_by' not in promo:
+            if 'used_by' not in promo or not isinstance(promo['used_by'], list):
                 promo['used_by'] = []
-            if 'used_at' not in promo:
+            if 'used_at' not in promo or not isinstance(promo['used_at'], list):
                 promo['used_at'] = []
             promo['used_by'].append(user_id)
             promo['used_at'].append(datetime.now().isoformat())
@@ -4615,17 +4615,17 @@ async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DE
             product = next((p for p in catalog if p['id'] == value), None)
             value_str = product['name'] if product else "Товар удален"
         created = promo.get('created_at', '')[:10]
-        used_by = promo.get('used_by', [])
+        used_by = promo.get('used_by')
         used_at = promo.get('used_at', [])
         used_info = ""
-        if used_by:
+        if used_by and isinstance(used_by, list):
             used_info = "\n   Использовали:"
             for uid, at in zip(used_by, used_at):
                 username = users.get(str(uid), {}).get('username', 'unknown')
                 used_info += f"\n      • {at[:10]} – @{username} (ID: `{uid}`)"
         text += f"`{code}`\n"
         text += f"   {type_}: {value_str}\n"
-        text += f"   {status}, создан {created}, активаций: {len(used_by)}/{promo.get('max_uses', 0) if promo.get('max_uses', 0) > 0 else '∞'}"
+        text += f"   {status}, создан {created}, активаций: {len(used_by) if isinstance(used_by, list) else 0}/{promo.get('max_uses', 0) if promo.get('max_uses', 0) > 0 else '∞'}"
         if used_info:
             text += used_info
         text += "\n\n"
@@ -5493,7 +5493,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif data == "admin_add_balance":
                 await admin_add_balance_handler(update, context)
                 return
-            elif data == "admin_remove_balance":  # НОВАЯ КНОПКА
+            elif data == "admin_remove_balance":
                 await admin_remove_balance_handler(update, context)
                 return
             elif data == "admin_manage_admins":
@@ -5864,7 +5864,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif context.user_data.get('awaiting_admin_add_balance') and is_admin(user_id):
         await process_admin_add_balance(update, context, text)
         return
-    elif context.user_data.get('awaiting_admin_remove_balance') and is_admin(user_id):  # НОВОЕ
+    elif context.user_data.get('awaiting_admin_remove_balance') and is_admin(user_id):
         await process_admin_remove_balance(update, context, text)
         return
     elif context.user_data.get('awaiting_admin_id') and is_bot_owner(user_id):
