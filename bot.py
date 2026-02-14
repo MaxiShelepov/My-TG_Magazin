@@ -44,6 +44,9 @@ ADMIN_PAYMENT_DETAILS = {
     "name": ""
 }
 
+# Курс рубля к USDT
+RUB_TO_USDT_RATE = 80.0
+
 # CryptoBot API настройки
 CRYPTO_BOT_TOKEN = "528185:AAxnCLhKJKxLQgsPxsK0xPkm3pQ61kdwRL3"
 CRYPTO_BOT_API_URL = "https://pay.crypt.bot/api"
@@ -60,6 +63,8 @@ INVOICES_FILE = os.path.join(DATA_DIR, "invoices.json")
 ADMINS_FILE = os.path.join(DATA_DIR, "admins.json")
 PURCHASES_FILE = os.path.join(DATA_DIR, "purchases.json")
 PRODUCT_FILES_DIR = os.path.join(DATA_DIR, "product_files")
+PROMOCODES_FILE = os.path.join(DATA_DIR, "promocodes.json")
+REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
 os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
 
 # Глобальные переменные
@@ -69,6 +74,8 @@ orders = []
 invoices = {}
 admins = []
 purchases = {}
+promocodes = {}
+requests_dict = {}
 
 # ========== КЭШИРОВАНИЕ ДЛЯ ПОВЫШЕНИЯ ПРОИЗВОДИТЕЛЬНОСТИ ==========
 
@@ -225,7 +232,7 @@ def atomic_json_dump(data, filepath):
         return False
 
 def load_data():
-    global users, catalog, orders, invoices, admins, purchases
+    global users, catalog, orders, invoices, admins, purchases, promocodes, requests_dict
     
     try:
         if os.path.exists(USERS_FILE):
@@ -278,6 +285,22 @@ def load_data():
         else:
             purchases = {}
             save_purchases()
+        
+        if os.path.exists(PROMOCODES_FILE):
+            with open(PROMOCODES_FILE, 'r', encoding='utf-8') as f:
+                promocodes = json.load(f)
+            logger.info(f"Загружено {len(promocodes)} промокодов")
+        else:
+            promocodes = {}
+            save_promocodes()
+        
+        if os.path.exists(REQUESTS_FILE):
+            with open(REQUESTS_FILE, 'r', encoding='utf-8') as f:
+                requests_dict = json.load(f)
+            logger.info(f"Загружено {len(requests_dict)} заявок на пополнение")
+        else:
+            requests_dict = {}
+            save_requests()
             
         # Инвалидация кэша при загрузке данных
         invalidate_caches()
@@ -290,13 +313,15 @@ def load_data():
         invoices = {}
         admins = [BOT_OWNER_ID]
         purchases = {}
+        promocodes = {}
+        requests_dict = {}
 
 def save_users():
     atomic_json_dump(users, USERS_FILE)
 
 def save_catalog():
     atomic_json_dump(catalog, CATALOG_FILE)
-    invalidate_caches()  # Сбрасываем кэш при изменении каталога
+    invalidate_caches()
 
 def save_orders():
     atomic_json_dump(orders, ORDERS_FILE)
@@ -309,6 +334,12 @@ def save_admins():
 
 def save_purchases():
     atomic_json_dump(purchases, PURCHASES_FILE)
+
+def save_promocodes():
+    atomic_json_dump(promocodes, PROMOCODES_FILE)
+
+def save_requests():
+    atomic_json_dump(requests_dict, REQUESTS_FILE)
 
 def escape_username(username: str) -> str:
     """Экранирует специальные символы в username"""
@@ -668,6 +699,8 @@ def get_main_inline_keyboard(user_id: int = None):
         [InlineKeyboardButton("📦 Мои покупки", callback_data="my_purchases")],
         [InlineKeyboardButton("📊 Доступные товары", callback_data="available_products")],
         [InlineKeyboardButton("📋 Мои счета", callback_data="my_invoices")],
+        [InlineKeyboardButton("🎟️ Промокод", callback_data="promo_code")],
+        [InlineKeyboardButton("💳 Пополнить через админа", callback_data="deposit_admin_start")],
         [InlineKeyboardButton("🆘 Поддержка", callback_data="support")]
     ]
     
@@ -687,6 +720,8 @@ def get_admin_keyboard():
         [InlineKeyboardButton("💰 Пополнить баланс (админ)", callback_data="admin_add_balance")],
         [InlineKeyboardButton("📊 CryptoBot Статистика", callback_data="admin_crypto_stats")],
         [InlineKeyboardButton("👥 Управление администраторами", callback_data="admin_manage_admins")],
+        [InlineKeyboardButton("🎟️ Управление промокодами", callback_data="admin_manage_promocodes")],
+        [InlineKeyboardButton("📋 Заявки на пополнение", callback_data="admin_requests_list")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -879,7 +914,7 @@ def get_category_management_keyboard():
         [InlineKeyboardButton("📝 Создать тип в подкатегории", callback_data="admin_add_type_to_subcategory")],
         [InlineKeyboardButton("📋 Просмотреть структуру каталога", callback_data="admin_view_structure")],
         [InlineKeyboardButton("🗑️ Удалить категорию", callback_data="admin_delete_category")],
-        [InlineKeyboardButton("🗑️ Удалить подкатегорию", callback_data="admin_delete_subcategory")],  # НОВАЯ КНОПКА
+        [InlineKeyboardButton("🗑️ Удалить подкатегорию", callback_data="admin_delete_subcategory")],
         [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
     ])
@@ -894,7 +929,6 @@ def get_confirm_delete_category_keyboard(category: str):
         [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")]
     ])
 
-# НОВАЯ функция для клавиатуры подтверждения удаления подкатегории
 def get_confirm_delete_subcategory_keyboard(category: str, subcategory: str):
     """Клавиатура для подтверждения удаления подкатегории"""
     return InlineKeyboardMarkup([
@@ -942,6 +976,47 @@ def get_purchase_detail_keyboard(purchase_id: str):
         [InlineKeyboardButton("🔙 К моим покупкам", callback_data="my_purchases")]
     ])
 
+# ========== НОВЫЕ КЛАВИАТУРЫ ДЛЯ ПРОМОКОДОВ ==========
+
+def get_admin_promocodes_keyboard():
+    """Клавиатура для управления промокодами"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Создать денежный промокод", callback_data="admin_create_balance_promo")],
+        [InlineKeyboardButton("➕ Создать товарный промокод", callback_data="admin_create_item_promo")],
+        [InlineKeyboardButton("📋 Список промокодов", callback_data="admin_list_promocodes")],
+        [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
+    ])
+
+def get_promocode_cancel_keyboard():
+    """Клавиатура для отмены ввода промокода"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_menu")]
+    ])
+
+# ========== НОВЫЕ КЛАВИАТУРЫ ДЛЯ ЗАЯВОК ==========
+
+def get_admin_requests_keyboard():
+    """Клавиатура для списка заявок"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Обновить", callback_data="admin_requests_list")],
+        [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
+    ])
+
+def get_back_to_requests_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 К заявкам", callback_data="admin_requests_list")]
+    ])
+
+def get_confirm_request_keyboard(request_id: str):
+    """Клавиатура для подтверждения/отклонения заявки"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_request:{request_id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_request:{request_id}")
+        ],
+        [InlineKeyboardButton("🔙 Назад", callback_data="admin_requests_list")]
+    ])
+
 # ========== КОМАНДЫ ПОЛЬЗОВАТЕЛЯ ==========
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -950,7 +1025,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'awaiting_admin_add_balance', 'awaiting_addbalance_self', 'awaiting_addbalance_other',
         'awaiting_restock', 'awaiting_bulk_upload_params', 'awaiting_category_name',
         'awaiting_subcategory_name', 'awaiting_type_name', 'awaiting_delete_category',
-        'awaiting_custom_quantity', 'awaiting_admin_id', 'awaiting_type_to_category'
+        'awaiting_custom_quantity', 'awaiting_admin_id', 'awaiting_type_to_category',
+        'awaiting_promo_code', 'awaiting_rub_amount', 'awaiting_request_id'
     ]
     for key in states_to_clear:
         if key in context.user_data:
@@ -990,6 +1066,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💎 **Пополнение через CryptoBot:**\n"
         "• Только USDT (TRC20)\n"
         "• Мгновенное зачисление\n\n"
+        "💳 **Пополнение через администратора:**\n"
+        "• Введите сумму в рублях, она конвертируется в USDT по курсу 80 руб = 1 USDT\n"
+        "• После создания заявки свяжитесь с администратором для оплаты\n\n"
         "🎯 **Выберите действие:**"
     )
     
@@ -1124,7 +1203,6 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
     )
 
 async def category_types_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
-    """Обработчик для отображения типов в категории (без подкатегории)"""
     query = update.callback_query
     await safe_answer_query(query)
     
@@ -1342,7 +1420,6 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 async def catalog_type_no_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, type_: str):
-    """Обработчик для типов без подкатегории"""
     query = update.callback_query
     await safe_answer_query(query)
     
@@ -1600,7 +1677,6 @@ async def invoices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== МОИ ПОКУПКИ ==========
 
 async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
-    """Обработчик для раздела 'Мои покупки'"""
     query = update.callback_query
     await safe_answer_query(query)
     
@@ -1702,7 +1778,6 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, purchase_id: str):
-    """Показывает детали конкретной покупки"""
     query = update.callback_query
     await safe_answer_query(query)
     
@@ -1766,7 +1841,6 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 async def download_purchase_file(update: Update, context: ContextTypes.DEFAULT_TYPE, purchase_id: str):
-    """Отправляет файл(ы) покупки пользователю"""
     query = update.callback_query
     await safe_answer_query(query)
     
@@ -1862,7 +1936,8 @@ async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Мгновенное зачисление\n\n"
         "💳 **Через администратора:**\n"
         "• Перевод по реквизитам\n"
-        "• Требует подтверждения"
+        "• Требует подтверждения\n"
+        "• Курс: 80 руб = 1 USDT"
     )
     
     await safe_edit_message_text(
@@ -1873,33 +1948,94 @@ async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def deposit_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Это старая кнопка, теперь используем deposit_admin_start
+    await deposit_admin_start_handler(update, context)
+
+async def deposit_admin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало процесса пополнения через администратора (ввод суммы в рублях)"""
     query = update.callback_query
     await safe_answer_query(query)
     
     user_id = query.from_user.id
-    
-    response_text = (
-        "💳 **Пополнение через администратора**\n\n"
-        "**Реквизиты для перевода:**\n\n"
-        f"💳 **Карта:** `{ADMIN_PAYMENT_DETAILS['card']}`\n"
-        f"🏦 **Банк:** {ADMIN_PAYMENT_DETAILS['bank']}\n"
-        f"📱 **СБП:** `{ADMIN_PAYMENT_DETAILS['phone']}`\n"
-        f"👤 **Получатель:** {ADMIN_PAYMENT_DETAILS['name']}\n\n"
-        f"🆔 **Ваш ID:** `{user_id}`\n\n"
-        "⚠️ **Внимание:**\n"
-        "• Пополнение через администратора занимает время\n"
-        "• Баланс будет зачислен после проверки платежа"
-    )
+    ensure_user_registered(user_id)
     
     await safe_edit_message_text(
         query=query,
-        text=response_text,
+        text="💳 **Пополнение через администратора**\n\n"
+             "Введите сумму в **рублях** (целое число или десятичная дробь).\n"
+             f"Курс: {RUB_TO_USDT_RATE} руб = 1 USDT\n\n"
+             "После ввода будет создана заявка, которую администратор рассмотрит.\n"
+             "Обязательно свяжитесь с администратором для получения реквизитов и укажите номер заявки.\n\n"
+             "Или нажмите '🔙 Назад' для отмены.",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Криптовалюта (CryptoBot)", callback_data="deposit_crypto")],
             [InlineKeyboardButton("🔙 Назад", callback_data="deposit_menu")]
         ])
     )
+    context.user_data['awaiting_rub_amount'] = True
+
+async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE, rub_amount: float):
+    """Создаёт заявку на пополнение и уведомляет администраторов"""
+    user_id = update.effective_user.id
+    user_data = ensure_user_registered(user_id)
+    
+    # Конвертация в USDT
+    usdt_amount = rub_amount / RUB_TO_USDT_RATE
+    
+    # Генерируем ID заявки
+    request_id = str(uuid.uuid4())[:8]
+    
+    request_data = {
+        "request_id": request_id,
+        "user_id": user_id,
+        "username": user_data.get('username', 'unknown'),
+        "first_name": user_data.get('first_name', 'User'),
+        "rub_amount": rub_amount,
+        "usdt_amount": usdt_amount,
+        "status": "pending",  # pending, approved, rejected
+        "created_at": datetime.now().isoformat(),
+        "processed_at": None,
+        "processed_by": None
+    }
+    
+    requests_dict[request_id] = request_data
+    save_requests()
+    
+    # Уведомление пользователю
+    await update.message.reply_text(
+        f"✅ **Заявка на пополнение создана!**\n\n"
+        f"🆔 **Номер заявки:** `{request_id}`\n"
+        f"💰 **Сумма в рублях:** {rub_amount:.2f} руб\n"
+        f"💵 **Сумма в USDT:** {usdt_amount:.2f} USDT\n\n"
+        f"📞 **Свяжитесь с администратором:** @{ADMIN_USERNAME}\n"
+        f"📋 **Обязательно укажите номер заявки и сумму при обращении.**\n\n"
+        f"После подтверждения администратором средства поступят на ваш баланс.",
+        parse_mode='Markdown',
+        reply_markup=get_main_inline_keyboard(user_id)
+    )
+    
+    # Уведомление всем администраторам
+    for admin_id in admins:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=f"📋 **Новая заявка на пополнение!**\n\n"
+                     f"🆔 **Номер:** `{request_id}`\n"
+                     f"👤 **Пользователь:** {user_data.get('first_name')} (@{user_data.get('username')})\n"
+                     f"🆔 **ID:** `{user_id}`\n"
+                     f"💰 **Сумма в рублях:** {rub_amount:.2f} руб\n"
+                     f"💵 **Сумма в USDT:** {usdt_amount:.2f} USDT\n\n"
+                     f"Для обработки заявки перейдите в админ-панель → Заявки на пополнение.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 Перейти к заявкам", callback_data="admin_requests_list")]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+    
+    if 'awaiting_rub_amount' in context.user_data:
+        del context.user_data['awaiting_rub_amount']
 
 async def deposit_crypto_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2783,6 +2919,163 @@ async def handle_product_selection(update: Update, context: ContextTypes.DEFAULT
     product_id = data.split(":", 1)[1]
     await show_product_details(update, context, product_id)
 
+# ========== ПРОМОКОДЫ ==========
+
+def generate_promo_code(length=8):
+    """Генерирует случайный код из букв и цифр"""
+    chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    return ''.join(random.choices(chars, k=length))
+
+def get_available_item_products():
+    """Возвращает список доступных товаров с файлами (не наборы)"""
+    return [p for p in catalog if p.get('has_file') and not p.get('is_bundle') and is_product_available(p)]
+
+async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFAULT_TYPE) -> Tuple[bool, str]:
+    """Активирует промокод. Возвращает (успех, сообщение)"""
+    code_upper = code.upper()
+    if code_upper not in promocodes:
+        return False, "❌ Промокод не найден."
+    
+    promo = promocodes[code_upper]
+    if not promo.get('active', True):
+        return False, "❌ Промокод уже использован."
+    
+    user_data = ensure_user_registered(user_id)
+    
+    if promo['type'] == 'balance':
+        # Денежный промокод
+        amount = promo['value']
+        user_data['balance_usdt'] = user_data.get('balance_usdt', 0.0) + amount
+        promo['active'] = False
+        promo['used_by'] = user_id
+        promo['used_at'] = datetime.now().isoformat()
+        save_users()
+        save_promocodes()
+        return True, f"✅ Промокод активирован! Вам зачислено {amount} USDT."
+    
+    elif promo['type'] == 'item':
+        # Товарный промокод
+        product_id = promo['value']
+        # Ищем товар
+        product = next((p for p in catalog if p['id'] == product_id), None)
+        if not product or not is_product_available(product):
+            return False, "❌ Товар по промокоду больше не доступен."
+        
+        # Выдаём товар бесплатно (аналогично покупке)
+        if product.get('has_file') and product.get('file_path'):
+            # Файловый товар (одиночный)
+            if not os.path.exists(product['file_path']):
+                return False, "❌ Файл товара отсутствует на сервере."
+            
+            old_quantity = product.get('quantity', 1)
+            product['quantity'] = old_quantity - 1
+            if product['quantity'] <= 0:
+                product['sold'] = True
+            
+            purchase_data = {
+                "product_id": product['id'],
+                "product_name": product['name'],
+                "price": 0,
+                "quantity": 1,
+                "total_price": 0,
+                "is_bundle": False,
+                "has_file": True,
+                "file_path": product.get('file_path'),
+                "file_name": product.get('file_name'),
+                "category": product.get('category'),
+                "subcategory": product.get('subcategory'),
+                "type": product.get('type')
+            }
+            purchase_id = add_user_purchase(user_id, purchase_data)
+            
+            promo['active'] = False
+            promo['used_by'] = user_id
+            promo['used_at'] = datetime.now().isoformat()
+            save_catalog()
+            save_purchases()
+            save_promocodes()
+            
+            # Отправляем файл сразу
+            try:
+                with open(product['file_path'], 'rb') as f:
+                    await context.bot.send_document(
+                        chat_id=user_id,
+                        document=f,
+                        caption=f"🎁 Ваш товар по промокоду: {product['name']}",
+                        filename=product.get('file_name', 'file.txt')
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка отправки файла по промокоду: {e}")
+                return True, f"✅ Товар получен, но файл не удалось отправить. Обратитесь в поддержку."
+            
+            return True, f"✅ Промокод активирован! Товар **{product['name']}** отправлен."
+        
+        elif product.get('is_bundle'):
+            # Набор файлов — выдаём один случайный файл из набора
+            bundle_files = product.get('bundle_files', [])
+            available = [f for f in bundle_files if not f.get('sold')]
+            if not available:
+                return False, "❌ В наборе нет доступных файлов."
+            file_to_give = random.choice(available)
+            file_to_give['sold'] = True
+            file_to_give['sold_at'] = datetime.now().isoformat()
+            
+            purchase_data = {
+                "product_id": product['id'],
+                "product_name": product['name'],
+                "price": 0,
+                "quantity": 1,
+                "total_price": 0,
+                "is_bundle": True,
+                "has_file": True,
+                "bundle_files": [file_to_give.copy()],
+                "category": product.get('category'),
+                "subcategory": product.get('subcategory'),
+                "type": product.get('type')
+            }
+            add_user_purchase(user_id, purchase_data)
+            
+            promo['active'] = False
+            promo['used_by'] = user_id
+            promo['used_at'] = datetime.now().isoformat()
+            save_catalog()
+            save_purchases()
+            save_promocodes()
+            
+            try:
+                with open(file_to_give['path'], 'rb') as f:
+                    await context.bot.send_document(
+                        chat_id=user_id,
+                        document=f,
+                        caption=f"🎁 Ваш файл из набора по промокоду: {product['name']}",
+                        filename=file_to_give['name']
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка отправки файла из набора по промокоду: {e}")
+                return True, f"✅ Файл получен, но не удалось отправить. Обратитесь в поддержку."
+            
+            return True, f"✅ Промокод активирован! Файл из набора **{product['name']}** отправлен."
+        
+        else:
+            return False, "❌ Товар не поддерживает выдачу."
+    
+    return False, "❌ Неизвестный тип промокода."
+
+async def promo_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик нажатия на кнопку Промокод"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    await safe_edit_message_text(
+        query=query,
+        text="🎟️ **Введите промокод**\n\n"
+             "Напишите код промокода в сообщении.\n\n"
+             "Или нажмите '🔙 Отмена' для возврата.",
+        parse_mode='Markdown',
+        reply_markup=get_promocode_cancel_keyboard()
+    )
+    context.user_data['awaiting_promo_code'] = True
+
 # ========== АДМИН ФУНКЦИИ ==========
 
 async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2809,6 +3102,8 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             total_bundle_files += len(bundle_files)
             available_bundle_files += get_available_files_count(bundle_files)
     
+    pending_requests = sum(1 for req in requests_dict.values() if req.get('status') == 'pending')
+    
     stats_text = (
         f"👑 **Панель администратора**\n\n"
         f"📊 **Статистика товаров:**\n"
@@ -2822,7 +3117,9 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"💎 **CryptoBot:**\n"
         f"• Активных счетов: {sum(1 for inv in invoices.values() if inv.get('status') == 'active')}\n"
         f"• Оплаченных счетов: {sum(1 for inv in invoices.values() if inv.get('status') == 'paid')}\n\n"
-        f"👥 **Администраторы:** {len(admins)} человек"
+        f"📋 **Заявки на пополнение:** {pending_requests} ожидают\n"
+        f"👥 **Администраторы:** {len(admins)} человек\n"
+        f"🎟️ **Промокоды:** {len(promocodes)} всего, {sum(1 for p in promocodes.values() if p.get('active'))} активных"
     )
     
     await safe_edit_message_text(
@@ -2833,6 +3130,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 # ========== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ==========
+# (Весь код из оригинального файла bot (6).py вставлен ниже, начиная с admin_manage_categories_handler)
 
 async def admin_manage_categories_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -4090,7 +4388,6 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             
             available_files = get_available_files_count(bundle_files)
             
-            # Исправлено: вынесено условие в отдельную переменную
             subcategory_line = f"📂 Подкатегория: {subcategory}\n" if subcategory else ""
             
             await update.message.reply_text(
@@ -4544,6 +4841,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Обработка callback_data: {data} от пользователя {user_id}")
     
     try:
+        # Основные пользовательские кнопки
         if data == "back_to_menu" or data == "back_to_main":
             await start(update, context)
             return
@@ -4584,6 +4882,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await deposit_admin_handler(update, context)
             return
         
+        elif data == "deposit_admin_start":
+            await deposit_admin_start_handler(update, context)
+            return
+        
         elif data == "my_invoices":
             await invoices_handler(update, context)
             return
@@ -4616,6 +4918,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await cancel_invoice_handler(update, context, invoice_id)
             return
         
+        # Промокод
+        elif data == "promo_code":
+            await promo_code_handler(update, context)
+            return
+        
+        # Категории и товары (из оригинального кода)
         elif data.startswith("category_"):
             category_name = data.split("_", 1)[1]
             await catalog_category_handler(update, context, category_name)
@@ -4707,7 +5015,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await process_purchase(update, context, product_id, quantity)
             return
         
-        elif is_admin(user_id):
+        # Админские кнопки
+        if is_admin(user_id):
+            # Управление категориями и товарами (из оригинального кода)
             if data == "admin_create_product":
                 await admin_create_product_handler(update, context)
                 return
@@ -4736,7 +5046,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await admin_add_type_to_subcategory_handler(update, context)
                 return
             
-            # НОВЫЙ ОБРАБОТЧИК ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ
             elif data == "admin_delete_subcategory":
                 await admin_delete_subcategory_handler(update, context)
                 return
@@ -4756,7 +5065,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await select_category_for_type_to_category_handler(update, context, category)
                 return
             
-            # НОВЫЙ ОБРАБОТЧИК ВЫБОРА КАТЕГОРИИ ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ
             elif data.startswith("select_category_for_delete_subcat:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_delete_subcat_handler(update, context, category)
@@ -4770,7 +5078,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await select_subcategory_for_type_handler(update, context, category, subcategory)
                 return
             
-            # НОВЫЙ ОБРАБОТЧИК ВЫБОРА ПОДКАТЕГОРИИ ДЛЯ УДАЛЕНИЯ
             elif data.startswith("select_subcategory_for_delete:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -4797,7 +5104,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await final_delete_category_handler(update, context, category)
                 return
             
-            # НОВЫЙ ОБРАБОТЧИК ФИНАЛЬНОГО УДАЛЕНИЯ ПОДКАТЕГОРИИ
             elif data.startswith("final_delete_subcategory:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -4871,6 +5177,48 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             elif data == "admin_list_admins":
                 await admin_list_admins_handler(update, context)
+                return
+            
+            # Промокоды
+            elif data == "admin_manage_promocodes":
+                await admin_manage_promocodes_handler(update, context)
+                return
+            
+            elif data == "admin_create_balance_promo":
+                await admin_create_balance_promo_handler(update, context)
+                return
+            
+            elif data == "admin_create_item_promo":
+                await admin_create_item_promo_handler(update, context)
+                return
+            
+            elif data == "admin_list_promocodes":
+                await admin_list_promocodes_handler(update, context)
+                return
+            
+            elif data.startswith("promo_select_item:"):
+                product_id = data.split(":", 1)[1]
+                await promo_select_item_handler(update, context, product_id)
+                return
+            
+            # Заявки
+            elif data == "admin_requests_list":
+                await admin_requests_list_handler(update, context)
+                return
+            
+            elif data.startswith("view_request:"):
+                request_id = data.split(":", 1)[1]
+                await view_request_handler(update, context, request_id)
+                return
+            
+            elif data.startswith("confirm_request:"):
+                request_id = data.split(":", 1)[1]
+                await confirm_request_handler(update, context, request_id)
+                return
+            
+            elif data.startswith("reject_request:"):
+                request_id = data.split(":", 1)[1]
+                await reject_request_handler(update, context, request_id)
                 return
             
             elif data.startswith("remove_admin:"):
@@ -4991,6 +5339,115 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name=update.effective_user.first_name
     )
     
+    # Проверка на отмену в любом состоянии
+    if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
+        for key in list(context.user_data.keys()):
+            if key.startswith('awaiting_'):
+                del context.user_data[key]
+        await update.message.reply_text(
+            "❌ Действие отменено.",
+            reply_markup=get_main_inline_keyboard(user_id)
+        )
+        return
+    
+    # Обработка ввода промокода
+    if context.user_data.get('awaiting_promo_code'):
+        success, msg = await activate_promocode(user_id, text, context)
+        await update.message.reply_text(
+            msg,
+            parse_mode='Markdown',
+            reply_markup=get_main_inline_keyboard(user_id)
+        )
+        del context.user_data['awaiting_promo_code']
+        return
+    
+    # Админ: создание денежного промокода
+    if context.user_data.get('awaiting_promo_balance_amount') and is_admin(user_id):
+        try:
+            amount = float(text.replace(',', '.'))
+            if amount <= 0:
+                await update.message.reply_text("❌ Сумма должна быть больше 0.")
+                return
+            # Запрашиваем код
+            context.user_data['promo_balance_amount'] = amount
+            context.user_data['awaiting_promo_balance_code'] = True
+            del context.user_data['awaiting_promo_balance_amount']
+            await update.message.reply_text(
+                f"💰 Сумма: {amount} USDT\n\nВведите код промокода (или оставьте пустым для автогенерации):",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Отмена", callback_data="admin_manage_promocodes")]
+                ])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат суммы. Введите число.")
+        return
+    
+    if context.user_data.get('awaiting_promo_balance_code') and is_admin(user_id):
+        code = text.strip().upper()
+        if not code:
+            code = generate_promo_code()
+        amount = context.user_data.get('promo_balance_amount')
+        promocodes[code] = {
+            'code': code,
+            'type': 'balance',
+            'value': amount,
+            'created_by': user_id,
+            'created_at': datetime.now().isoformat(),
+            'active': True
+        }
+        save_promocodes()
+        del context.user_data['awaiting_promo_balance_code']
+        del context.user_data['promo_balance_amount']
+        await update.message.reply_text(
+            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: денежный\nСумма: {amount} USDT",
+            parse_mode='Markdown',
+            reply_markup=get_admin_promocodes_keyboard()
+        )
+        return
+    
+    # Админ: ввод кода для товарного промокода
+    if context.user_data.get('awaiting_promo_item_code') and is_admin(user_id):
+        code = text.strip().upper()
+        if not code:
+            code = generate_promo_code()
+        product_id = context.user_data.get('promo_item_product')
+        promocodes[code] = {
+            'code': code,
+            'type': 'item',
+            'value': product_id,
+            'created_by': user_id,
+            'created_at': datetime.now().isoformat(),
+            'active': True
+        }
+        save_promocodes()
+        del context.user_data['awaiting_promo_item_code']
+        del context.user_data['promo_item_product']
+        product = next((p for p in catalog if p['id'] == product_id), None)
+        product_name = product['name'] if product else "Товар"
+        await update.message.reply_text(
+            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: товарный\nТовар: {product_name}",
+            parse_mode='Markdown',
+            reply_markup=get_admin_promocodes_keyboard()
+        )
+        return
+    
+    # Обработка ввода суммы в рублях для заявки
+    if context.user_data.get('awaiting_rub_amount'):
+        try:
+            rub_amount = float(text.replace(',', '.'))
+            if rub_amount <= 0:
+                await update.message.reply_text("❌ Сумма должна быть больше 0. Введите сумму в рублях.")
+                return
+            if rub_amount > 1000000:
+                await update.message.reply_text("❌ Слишком большая сумма. Максимум 1 000 000 руб.")
+                return
+            
+            await process_rub_amount(update, context, rub_amount)
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат суммы. Введите число (например: 500).")
+        return
+    
+    # Далее остальные обработчики из исходного кода (создание товара, пополнение USDT и т.д.)
     if context.user_data.get('awaiting_usdt_amount'):
         if text.lower() in ['назад', 'back', 'отмена', 'cancel', '🔙 назад']:
             if 'awaiting_usdt_amount' in context.user_data:
@@ -5131,7 +5588,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неверный формат ID. ID должен быть числом")
         return
     
-    # ИСПРАВЛЕНО: создание категории с placeholder-товаром
+    # Создание категории с placeholder-товаром
     elif context.user_data.get('awaiting_category_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_category_name']
@@ -5149,7 +5606,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Категория '{category_name}' уже существует!")
             return
         
-        # Создаём placeholder-товар для новой категории
         placeholder = create_placeholder_product(category=category_name)
         catalog.append(placeholder)
         save_catalog()
@@ -5165,7 +5621,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_category_name']
         return
     
-    # ИСПРАВЛЕНО: создание подкатегории с placeholder-товаром
+    # Создание подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_subcategory_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_subcategory_name']
@@ -5184,7 +5640,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Подкатегория '{subcategory_name}' уже существует в категории '{category}'!")
             return
         
-        # Создаём placeholder-товар для новой подкатегории
         placeholder = create_placeholder_product(category=category, subcategory=subcategory_name)
         catalog.append(placeholder)
         save_catalog()
@@ -5201,7 +5656,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_subcategory_name']
         return
     
-    # ИСПРАВЛЕНО: создание типа в категории (без подкатегории) с placeholder-товаром
+    # Создание типа в категории (без подкатегории) с placeholder-товаром
     elif context.user_data.get('awaiting_type_to_category') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_to_category']
@@ -5221,7 +5676,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Тип '{type_name}' уже существует в категории '{category}' (без подкатегории)!")
             return
         
-        # Создаём placeholder-товар для нового типа в категории (без подкатегории)
         placeholder = create_placeholder_product(category=category, type_=type_name)
         catalog.append(placeholder)
         save_catalog()
@@ -5238,7 +5692,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_type_to_category']
         return
     
-    # ИСПРАВЛЕНО: создание типа в подкатегории с placeholder-товаром
+    # Создание типа в подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_type_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_name']
@@ -5259,7 +5713,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Тип '{type_name}' уже существует в подкатегории '{subcategory}'!")
             return
         
-        # Создаём placeholder-товар для нового типа в подкатегории
         placeholder = create_placeholder_product(category=category, subcategory=subcategory, type_=type_name)
         catalog.append(placeholder)
         save_catalog()
@@ -5361,20 +5814,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             params['price'] = price
             params['description'] = description
 
-            # Формируем текст сообщения без вложенных f-строк
-            text = f"✅ **Параметры установлены!**\n\n"
-            text += f"📁 **Категория:** {params['category']}\n"
+            text_msg = f"✅ **Параметры установлены!**\n\n"
+            text_msg += f"📁 **Категория:** {params['category']}\n"
             if params.get('subcategory'):
-                text += f"📂 Подкатегория: {params['subcategory']}\n"
-            text += f"📝 **Тип:** {params['type']}\n"
-            text += f"💰 **Цена:** {price} USDT\n"
-            text += f"📝 **Описание:** {description}\n\n"
-            text += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
-            text += "Каждый файл будет добавлен в набор для этого типа.\n\n"
-            text += "Для завершения нажмите '🔙 В админку'"
+                text_msg += f"📂 Подкатегория: {params['subcategory']}\n"
+            text_msg += f"📝 **Тип:** {params['type']}\n"
+            text_msg += f"💰 **Цена:** {price} USDT\n"
+            text_msg += f"📝 **Описание:** {description}\n\n"
+            text_msg += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
+            text_msg += "Каждый файл будет добавлен в набор для этого типа.\n\n"
+            text_msg += "Для завершения нажмите '🔙 В админку'"
 
             await update.message.reply_text(
-                text,
+                text_msg,
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
@@ -5474,13 +5926,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     print("=" * 50)
-    print("🤖 ЗАПУСК БОТА С CRYPTOBOT И ИЕРАРХИЧЕСКИМИ КАТЕГОРИЯМИ")
+    print("🤖 ЗАПУСК БОТА С CRYPTOBOT, ИЕРАРХИЧЕСКИМИ КАТЕГОРИЯМИ, ПРОМОКОДАМИ И ЗАЯВКАМИ")
     print("=" * 50)
     print("📁 **ИЕРАРХИЯ КАТЕГОРИЙ:** Категория → Подкатегория → Тип")
     print("📁 **ТИПЫ В КАТЕГОРИИ:** Теперь можно создавать типы прямо в категориях (без подкатегорий)")
     print("📦 **МАССОВАЯ ЗАГРУЗКА:** Загрузка файлов в конкретный тип")
     print("🛡️ **УПРАВЛЕНИЕ КАТЕГОРИЯМИ:** Добавление/удаление категорий, подкатегорий, типов")
-    print("🛍️ **МОИ ПОКУПКИ:** Новый раздел для просмотра купленных товаров")
+    print("🛍️ **МОИ ПОКУПКИ:** Раздел для просмотра купленных товаров")
+    print("🎟️ **ПРОМОКОДЫ:** Денежные и товарные промокоды")
+    print("📋 **ЗАЯВКИ НА ПОПОЛНЕНИЕ:** Пополнение через администратора с подтверждением")
     print("⚡ **ОПТИМИЗАЦИЯ:** Кэширование данных, атомарная запись файлов")
     print("=" * 50)
     
@@ -5515,6 +5969,8 @@ def main():
     print(f"• Файлов в наборах: {total_bundle_files} (доступно: {available_bundle_files})")
     print(f"• Категорий: {len(categories)}")
     print(f"• Администраторов: {len(admins)}")
+    print(f"• Промокодов: {len(promocodes)}")
+    print(f"• Заявок: {len(requests_dict)}")
     print("=" * 50)
     
     application = Application.builder().token(TOKEN).build()
