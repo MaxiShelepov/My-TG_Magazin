@@ -65,6 +65,7 @@ PURCHASES_FILE = os.path.join(DATA_DIR, "purchases.json")
 PRODUCT_FILES_DIR = os.path.join(DATA_DIR, "product_files")
 PROMOCODES_FILE = os.path.join(DATA_DIR, "promocodes.json")
 REQUESTS_FILE = os.path.join(DATA_DIR, "requests.json")
+PREORDERS_FILE = os.path.join(DATA_DIR, "preorders.json")
 os.makedirs(PRODUCT_FILES_DIR, exist_ok=True)
 
 # Глобальные переменные
@@ -76,6 +77,7 @@ admins = []
 purchases = {}
 promocodes = {}
 requests_dict = {}
+preorders = []
 
 # ========== КЭШИРОВАНИЕ ==========
 _categories_cache = None
@@ -217,7 +219,7 @@ def atomic_json_dump(data, filepath):
         return False
 
 def load_data():
-    global users, catalog, orders, invoices, admins, purchases, promocodes, requests_dict
+    global users, catalog, orders, invoices, admins, purchases, promocodes, requests_dict, preorders
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -286,6 +288,14 @@ def load_data():
             requests_dict = {}
             save_requests()
 
+        if os.path.exists(PREORDERS_FILE):
+            with open(PREORDERS_FILE, 'r', encoding='utf-8') as f:
+                preorders = json.load(f)
+            logger.info(f"Загружено {len(preorders)} предзаказов")
+        else:
+            preorders = []
+            save_preorders()
+
         invalidate_caches()
     except Exception as e:
         logger.error(f"Ошибка загрузки данных: {e}")
@@ -297,6 +307,7 @@ def load_data():
         purchases = {}
         promocodes = {}
         requests_dict = {}
+        preorders = []
 
 def save_users():
     atomic_json_dump(users, USERS_FILE)
@@ -322,6 +333,9 @@ def save_promocodes():
 
 def save_requests():
     atomic_json_dump(requests_dict, REQUESTS_FILE)
+
+def save_preorders():
+    atomic_json_dump(preorders, PREORDERS_FILE)
 
 def escape_username(username: str) -> str:
     if not username:
@@ -608,6 +622,7 @@ def get_personal_account_keyboard():
     keyboard = [
         [InlineKeyboardButton("📋 Мои счета", callback_data="my_invoices")],
         [InlineKeyboardButton("📦 Мои покупки", callback_data="my_purchases")],
+        [InlineKeyboardButton("📦 Мои предзаказы", callback_data="my_preorders")],
         [InlineKeyboardButton("🎟️ Промокод", callback_data="promo_code")],
         [InlineKeyboardButton("💳 Пополнить баланс", callback_data="deposit_menu")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
@@ -627,6 +642,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton("👥 Управление администраторами", callback_data="admin_manage_admins")],
         [InlineKeyboardButton("🎟️ Управление промокодами", callback_data="admin_manage_promocodes")],
         [InlineKeyboardButton("📋 Заявки на пополнение", callback_data="admin_requests_list")],
+        [InlineKeyboardButton("📦 Предзаказы", callback_data="admin_preorders_list")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -870,6 +886,33 @@ def get_confirm_request_keyboard(request_id: str):
         [InlineKeyboardButton("🔙 Назад", callback_data="admin_requests_list")]
     ])
 
+# ========== КЛАВИАТУРЫ ДЛЯ ПРЕДЗАКАЗОВ ==========
+def get_admin_preorders_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Обновить", callback_data="admin_preorders_list")],
+        [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
+    ])
+
+def get_back_to_preorders_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 К предзаказам", callback_data="admin_preorders_list")]
+    ])
+
+def get_confirm_preorder_keyboard(preorder_id: str):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_preorder:{preorder_id}"),
+            InlineKeyboardButton("❌ Отменить", callback_data=f"reject_preorder:{preorder_id}")
+        ],
+        [InlineKeyboardButton("🔙 Назад", callback_data="admin_preorders_list")]
+    ])
+
+def get_preorder_data_input_keyboard(product_id: str, quantity: int):
+    """Клавиатура для ввода данных предзаказа после выбора количества"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Назад", callback_data=f"product:{product_id}")]
+    ])
+
 # ========== КОМАНДЫ ПОЛЬЗОВАТЕЛЯ ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     states_to_clear = [
@@ -878,7 +921,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'awaiting_restock', 'awaiting_bulk_upload_params', 'awaiting_category_name',
         'awaiting_subcategory_name', 'awaiting_type_name', 'awaiting_delete_category',
         'awaiting_custom_quantity', 'awaiting_admin_id', 'awaiting_type_to_category',
-        'awaiting_promo_code', 'awaiting_rub_amount', 'awaiting_request_id'
+        'awaiting_promo_code', 'awaiting_rub_amount', 'awaiting_request_id',
+        'awaiting_preorder_quantity', 'awaiting_preorder_data'
     ]
     for key in states_to_clear:
         if key in context.user_data:
@@ -2117,8 +2161,9 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not is_product_available(selected_product):
         logger.warning(f"Товар {selected_product['id']} недоступен")
-        await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
-        return
+        # Позволяем предзаказ даже если товар недоступен
+        # await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
+        # return
 
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
     product_text = f"{emoji} **{selected_product['name']}**\n\n"
@@ -2139,46 +2184,42 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     user_balance = user_data.get('balance_usdt', 0.0)
     price_per_item = selected_product['price']
 
-    if price_per_item > 0:
-        max_affordable = int(user_balance // price_per_item)
-    else:
-        max_affordable = 0
-
-    if selected_product.get('is_bundle', False):
-        max_available = get_available_files_count(selected_product.get('bundle_files', []))
-    else:
-        max_available = selected_product.get('quantity', 1)
-
-    max_quantity = min(max_available, max_affordable)
-
     product_text += f"\n👤 **Ваш баланс:** {user_balance:.2f} USDT"
 
-    if max_affordable == 0:
-        product_text += f"\n\n⚠️ **Недостаточно средств!**\n"
-        product_text += f"💰 **Необходимо:** {price_per_item} USDT за штуку\n"
-        product_text += f"💳 **У вас:** {user_balance:.2f} USDT\n"
-        product_text += f"📈 **Пополните баланс, чтобы купить этот товар.**"
-        await safe_edit_message_text(
-            query=query,
-            text=product_text,
-            parse_mode='Markdown',
-            reply_markup=get_insufficient_balance_keyboard()
-        )
-        return
+    # Кнопки: купить (если доступно) и оформить предзаказ (всегда)
+    keyboard = []
 
-    product_text += f"\n💡 **Можете купить до {max_quantity} шт.**"
+    # Если товар доступен для покупки, добавляем кнопку выбора количества
+    if is_product_available(selected_product):
+        if price_per_item > 0:
+            max_affordable = int(user_balance // price_per_item)
+        else:
+            max_affordable = 0
 
-    if max_quantity <= 0:
-        await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
-        return
+        if selected_product.get('is_bundle', False):
+            max_available = get_available_files_count(selected_product.get('bundle_files', []))
+        else:
+            max_available = selected_product.get('quantity', 1)
 
-    product_text += f"\n\n📊 **Выберите количество для покупки:**"
+        max_quantity = min(max_available, max_affordable)
+
+        if max_quantity > 0:
+            keyboard.append([InlineKeyboardButton("🛒 Купить", callback_data=f"buy_product:{product_id}")])
+        else:
+            product_text += f"\n\n⚠️ **Недостаточно средств для покупки!**"
+    else:
+        product_text += f"\n\n⚠️ **Товар временно отсутствует в наличии, но можно оформить предзаказ.**"
+
+    # Кнопка предзаказа всегда доступна
+    keyboard.append([InlineKeyboardButton("📦 Оформить предзаказ", callback_data=f"preorder_product:{product_id}")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_catalog")])
+    keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
 
     await safe_edit_message_text(
         query=query,
         text=product_text,
         parse_mode='Markdown',
-        reply_markup=get_quantity_selection_keyboard(product_id, max_quantity)
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str, quantity: int):
@@ -2537,14 +2578,28 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
     promo = promocodes[code_upper]
     if not promo.get('active', True):
         return False, "❌ Промокод уже использован."
+
+    # Проверка лимита
+    max_uses = promo.get('max_uses', 0)
+    used_count = promo.get('used_count', 0)
+    if max_uses > 0 and used_count >= max_uses:
+        return False, "❌ Промокод исчерпал лимит использований."
+
     user_data = ensure_user_registered(user_id)
 
     if promo['type'] == 'balance':
         amount = promo['value']
         user_data['balance_usdt'] = user_data.get('balance_usdt', 0.0) + amount
-        promo['active'] = False
-        promo['used_by'] = user_id
-        promo['used_at'] = datetime.now().isoformat()
+        promo['used_count'] = used_count + 1
+        if max_uses > 0 and promo['used_count'] >= max_uses:
+            promo['active'] = False
+        # Сохраняем историю использований
+        if 'used_by' not in promo:
+            promo['used_by'] = []
+        if 'used_at' not in promo:
+            promo['used_at'] = []
+        promo['used_by'].append(user_id)
+        promo['used_at'].append(datetime.now().isoformat())
         save_users()
         save_promocodes()
         return True, f"✅ Промокод активирован! Вам зачислено {amount} USDT."
@@ -2577,11 +2632,17 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
                 "subcategory": product.get('subcategory'),
                 "type": product.get('type')
             }
-            purchase_id = add_user_purchase(user_id, purchase_data)
+            add_user_purchase(user_id, purchase_data)
 
-            promo['active'] = False
-            promo['used_by'] = user_id
-            promo['used_at'] = datetime.now().isoformat()
+            promo['used_count'] = used_count + 1
+            if max_uses > 0 and promo['used_count'] >= max_uses:
+                promo['active'] = False
+            if 'used_by' not in promo:
+                promo['used_by'] = []
+            if 'used_at' not in promo:
+                promo['used_at'] = []
+            promo['used_by'].append(user_id)
+            promo['used_at'].append(datetime.now().isoformat())
             save_catalog()
             save_purchases()
             save_promocodes()
@@ -2623,9 +2684,15 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             }
             add_user_purchase(user_id, purchase_data)
 
-            promo['active'] = False
-            promo['used_by'] = user_id
-            promo['used_at'] = datetime.now().isoformat()
+            promo['used_count'] = used_count + 1
+            if max_uses > 0 and promo['used_count'] >= max_uses:
+                promo['active'] = False
+            if 'used_by' not in promo:
+                promo['used_by'] = []
+            if 'used_at' not in promo:
+                promo['used_at'] = []
+            promo['used_by'].append(user_id)
+            promo['used_at'].append(datetime.now().isoformat())
             save_catalog()
             save_purchases()
             save_promocodes()
@@ -4480,6 +4547,513 @@ async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DE
         ])
     )
 
+# ========== НОВЫЕ ФУНКЦИИ ДЛЯ ПРЕДЗАКАЗОВ ==========
+async def my_preorders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает список предзаказов пользователя"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+
+    user_preorders = [p for p in preorders if p.get('user_id') == user_id]
+    if not user_preorders:
+        await safe_edit_message_text(
+            query=query,
+            text="📦 **У вас нет предзаказов.**\n\nЧтобы оформить предзаказ, выберите товар в каталоге и нажмите 'Оформить предзаказ'.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛍️ Каталог", callback_data="catalog_menu")],
+                [InlineKeyboardButton("🔙 В личный кабинет", callback_data="personal_account")]
+            ])
+        )
+        return
+
+    user_preorders.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+    text = "📦 **Ваши предзаказы:**\n\n"
+    keyboard = []
+
+    for pre in user_preorders:
+        product = next((p for p in catalog if p['id'] == pre['product_id']), None)
+        product_name = product['name'] if product else "Товар удален"
+        status_emoji = {
+            'pending': '⏳',
+            'paid': '💳',
+            'completed': '✅',
+            'cancelled': '❌'
+        }.get(pre['status'], '❓')
+        text += f"{status_emoji} **{product_name}** (x{pre['quantity']})\n"
+        text += f"   💰 {pre['total_price']} USDT\n"
+        text += f"   📅 {pre['created_at'][:16]}\n"
+        text += f"   Статус: {pre['status']}\n\n"
+        keyboard.append([InlineKeyboardButton(
+            f"{status_emoji} Предзаказ #{pre['id'][:8]}",
+            callback_data=f"view_preorder:{pre['id']}"
+        )])
+
+    keyboard.append([InlineKeyboardButton("🔙 В личный кабинет", callback_data="personal_account")])
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def view_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, preorder_id: str):
+    """Показывает детали предзаказа"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+
+    preorder = next((p for p in preorders if p['id'] == preorder_id), None)
+    if not preorder or preorder['user_id'] != user_id:
+        await safe_answer_query(query, "❌ Предзаказ не найден", show_alert=True)
+        return
+
+    product = next((p for p in catalog if p['id'] == preorder['product_id']), None)
+    product_name = product['name'] if product else "Товар удален"
+
+    status_text = {
+        'pending': '⏳ Ожидает оплаты',
+        'paid': '💳 Оплачен, ожидает обработки',
+        'completed': '✅ Выполнен',
+        'cancelled': '❌ Отменён'
+    }.get(preorder['status'], '❓ Неизвестно')
+
+    text = (
+        f"📦 **Предзаказ #{preorder_id[:8]}**\n\n"
+        f"🛍️ **Товар:** {product_name}\n"
+        f"📊 **Количество:** {preorder['quantity']}\n"
+        f"💰 **Общая стоимость:** {preorder['total_price']} USDT\n"
+        f"📅 **Дата создания:** {preorder['created_at'][:19]}\n"
+        f"📊 **Статус:** {status_text}\n\n"
+        f"📋 **Ваши данные:**\n"
+        f"👤 Имя: {preorder['user_data'].get('name', 'Не указано')}\n"
+        f"📞 Контакт: {preorder['user_data'].get('contact', 'Не указано')}\n"
+        f"📝 Комментарий: {preorder['user_data'].get('comment', 'Нет')}\n"
+    )
+
+    keyboard = [[InlineKeyboardButton("🔙 К моим предзаказам", callback_data="my_preorders")]]
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def preorder_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str):
+    """Начинает процесс предзаказа: запрос количества"""
+    query = update.callback_query
+    await safe_answer_query(query)
+
+    product = next((p for p in catalog if p['id'] == product_id), None)
+    if not product:
+        await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
+        return
+
+    await safe_edit_message_text(
+        query=query,
+        text=f"📦 **Предзаказ товара**\n\n"
+             f"Товар: {product['name']}\n"
+             f"Цена за единицу: {product['price']} USDT\n\n"
+             f"Введите количество для предзаказа (целое число, минимум 1):",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data=f"product:{product_id}")]
+        ])
+    )
+    context.user_data['preorder_product_id'] = product_id
+    context.user_data['awaiting_preorder_quantity'] = True
+
+async def process_preorder_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Обрабатывает ввод количества для предзаказа"""
+    try:
+        quantity = int(text)
+        if quantity <= 0:
+            await update.message.reply_text("❌ Количество должно быть больше 0. Введите целое число.")
+            return
+    except ValueError:
+        await update.message.reply_text("❌ Пожалуйста, введите целое число.")
+        return
+
+    product_id = context.user_data.get('preorder_product_id')
+    if not product_id:
+        await update.message.reply_text("❌ Ошибка: товар не найден. Начните заново.")
+        return
+
+    product = next((p for p in catalog if p['id'] == product_id), None)
+    if not product:
+        await update.message.reply_text("❌ Товар не найден.")
+        return
+
+    total = product['price'] * quantity
+
+    # Проверяем баланс
+    user_data = ensure_user_registered(update.effective_user.id)
+    if user_data['balance_usdt'] < total:
+        await update.message.reply_text(
+            f"❌ Недостаточно средств! Нужно: {total} USDT, у вас: {user_data['balance_usdt']:.2f} USDT.\nПополните баланс.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Пополнить баланс", callback_data="deposit_menu")],
+                [InlineKeyboardButton("🔙 В каталог", callback_data="catalog_menu")]
+            ])
+        )
+        del context.user_data['preorder_product_id']
+        del context.user_data['awaiting_preorder_quantity']
+        return
+
+    context.user_data['preorder_product'] = product_id
+    context.user_data['preorder_quantity'] = quantity
+    context.user_data['preorder_total'] = total
+
+    await update.message.reply_text(
+        f"📦 **Оформление предзаказа**\n\n"
+        f"Товар: {product['name']}\n"
+        f"Количество: {quantity}\n"
+        f"Сумма к оплате: {total} USDT\n\n"
+        "Пожалуйста, введите ваши данные в формате:\n"
+        "`Имя | Контакт | Комментарий (необязательно)`\n\n"
+        "Например:\n"
+        "`Иван Иванов | @ivanov | Хочу получить доставку`\n\n"
+        "Или нажмите '🔙 Назад' для отмены.",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data=f"product:{product_id}")]
+        ])
+    )
+    context.user_data['awaiting_preorder_data'] = True
+
+async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Обрабатывает ввод данных пользователя и создаёт предзаказ"""
+    user_id = update.effective_user.id
+    user_data = ensure_user_registered(user_id)
+
+    if not context.user_data.get('preorder_product') or not context.user_data.get('preorder_quantity'):
+        await update.message.reply_text("❌ Ошибка: данные предзаказа не найдены. Начните заново.")
+        return
+
+    product_id = context.user_data['preorder_product']
+    quantity = context.user_data['preorder_quantity']
+    total = context.user_data['preorder_total']
+
+    product = next((p for p in catalog if p['id'] == product_id), None)
+    if not product:
+        await update.message.reply_text("❌ Товар не найден.")
+        return
+
+    # Повторная проверка баланса (на случай изменения)
+    if user_data['balance_usdt'] < total:
+        await update.message.reply_text(
+            f"❌ Недостаточно средств! Нужно: {total} USDT, у вас: {user_data['balance_usdt']:.2f} USDT.\nПополните баланс.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Пополнить баланс", callback_data="deposit_menu")],
+                [InlineKeyboardButton("🔙 В каталог", callback_data="catalog_menu")]
+            ])
+        )
+        return
+
+    # Парсим введённые данные
+    parts = [p.strip() for p in text.split('|')]
+    name = parts[0] if len(parts) > 0 else "Не указано"
+    contact = parts[1] if len(parts) > 1 else "Не указано"
+    comment = parts[2] if len(parts) > 2 else ""
+
+    # Списываем деньги
+    user_data['balance_usdt'] -= total
+    save_users()
+
+    # Создаём предзаказ
+    preorder_id = str(uuid.uuid4())[:8]
+    preorder = {
+        "id": preorder_id,
+        "user_id": user_id,
+        "product_id": product_id,
+        "product_name": product['name'],
+        "quantity": quantity,
+        "price_per_item": product['price'],
+        "total_price": total,
+        "user_data": {
+            "name": name,
+            "contact": contact,
+            "comment": comment
+        },
+        "status": "paid",  # сразу оплачен
+        "created_at": datetime.now().isoformat(),
+        "processed_at": None,
+        "processed_by": None
+    }
+    preorders.append(preorder)
+    save_preorders()
+
+    # Уведомление пользователю
+    await update.message.reply_text(
+        f"✅ **Предзаказ успешно оформлен!**\n\n"
+        f"🆔 **Номер предзаказа:** `{preorder_id}`\n"
+        f"🛍️ **Товар:** {product['name']}\n"
+        f"📊 **Количество:** {quantity}\n"
+        f"💰 **Сумма:** {total} USDT\n"
+        f"💳 **Новый баланс:** {user_data['balance_usdt']:.2f} USDT\n\n"
+        f"Ваши данные:\n"
+        f"👤 Имя: {name}\n"
+        f"📞 Контакт: {contact}\n"
+        f"📝 Комментарий: {comment if comment else 'Нет'}\n\n"
+        f"Статус предзаказа: **оплачен, ожидает обработки**.\n"
+        f"Вы можете отслеживать его в разделе «Мои предзаказы».",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📦 Мои предзаказы", callback_data="my_preorders")],
+            [InlineKeyboardButton("🔙 В каталог", callback_data="catalog_menu")]
+        ])
+    )
+
+    # Уведомление администраторам
+    for admin_id in admins:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=(
+                    f"📦 **Новый предзаказ!**\n\n"
+                    f"🆔 **Номер:** `{preorder_id}`\n"
+                    f"👤 **Пользователь:** {user_data.get('first_name')} (@{user_data.get('username')})\n"
+                    f"🆔 **ID:** `{user_id}`\n"
+                    f"🛍️ **Товар:** {product['name']}\n"
+                    f"📊 **Количество:** {quantity}\n"
+                    f"💰 **Сумма:** {total} USDT\n"
+                    f"📋 **Данные:**\n"
+                    f"Имя: {name}\n"
+                    f"Контакт: {contact}\n"
+                    f"Комментарий: {comment if comment else 'Нет'}\n\n"
+                    f"Для обработки перейдите в админ-панель → Предзаказы."
+                ),
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 К предзаказам", callback_data="admin_preorders_list")]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
+
+    # Очищаем данные
+    del context.user_data['preorder_product']
+    del context.user_data['preorder_quantity']
+    del context.user_data['preorder_total']
+    del context.user_data['preorder_product_id']
+    del context.user_data['awaiting_preorder_data']
+
+# ========== АДМИН ФУНКЦИИ ДЛЯ ПРЕДЗАКАЗОВ ==========
+async def admin_preorders_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Список всех предзаказов для администратора"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    load_data()
+
+    if not preorders:
+        await safe_edit_message_text(
+            query=query,
+            text="📦 **Нет предзаказов.**",
+            parse_mode='Markdown',
+            reply_markup=get_admin_preorders_keyboard()
+        )
+        return
+
+    # Сортируем: сначала необработанные (paid, pending), потом остальные
+    sorted_preorders = sorted(
+        preorders,
+        key=lambda x: (
+            x.get('status') not in ['paid', 'pending'],
+            x.get('created_at', '')
+        )
+    )
+
+    text = "📦 **Все предзаказы:**\n\n"
+    keyboard = []
+
+    for pre in sorted_preorders:
+        user = users.get(str(pre['user_id']), {})
+        user_name = user.get('first_name', 'Unknown')
+        status_emoji = {
+            'pending': '⏳',
+            'paid': '💳',
+            'completed': '✅',
+            'cancelled': '❌'
+        }.get(pre['status'], '❓')
+        text += f"{status_emoji} **{pre['id'][:8]}** – {user_name}\n"
+        text += f"   🛍️ {pre['product_name']} x{pre['quantity']} = {pre['total_price']} USDT\n"
+        text += f"   📅 {pre['created_at'][:16]}\n\n"
+        keyboard.append([InlineKeyboardButton(
+            f"{status_emoji} Предзаказ {pre['id'][:8]} – {user_name}",
+            callback_data=f"view_admin_preorder:{pre['id']}"
+        )])
+
+    keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data="admin_preorders_list")])
+    keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def view_admin_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, preorder_id: str):
+    """Просмотр деталей предзаказа администратором"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    preorder = next((p for p in preorders if p['id'] == preorder_id), None)
+    if not preorder:
+        await safe_answer_query(query, "❌ Предзаказ не найден", show_alert=True)
+        return
+
+    user = users.get(str(preorder['user_id']), {})
+    user_name = user.get('first_name', 'Unknown')
+    username = user.get('username', 'unknown')
+
+    status_text = {
+        'pending': '⏳ Ожидает оплаты',
+        'paid': '💳 Оплачен, ожидает обработки',
+        'completed': '✅ Выполнен',
+        'cancelled': '❌ Отменён'
+    }.get(preorder['status'], '❓ Неизвестно')
+
+    text = (
+        f"📦 **Предзаказ #{preorder_id[:8]}**\n\n"
+        f"👤 **Пользователь:** {user_name} (@{username})\n"
+        f"🆔 **ID:** `{preorder['user_id']}`\n"
+        f"🛍️ **Товар:** {preorder['product_name']}\n"
+        f"📊 **Количество:** {preorder['quantity']}\n"
+        f"💰 **Цена за ед.:** {preorder['price_per_item']} USDT\n"
+        f"💵 **Общая стоимость:** {preorder['total_price']} USDT\n"
+        f"📅 **Создан:** {preorder['created_at'][:19]}\n"
+        f"📊 **Статус:** {status_text}\n\n"
+        f"📋 **Данные пользователя:**\n"
+        f"👤 Имя: {preorder['user_data'].get('name', 'Не указано')}\n"
+        f"📞 Контакт: {preorder['user_data'].get('contact', 'Не указано')}\n"
+        f"📝 Комментарий: {preorder['user_data'].get('comment', 'Нет')}\n"
+    )
+
+    if preorder.get('processed_at'):
+        text += f"\n⏱ **Обработан:** {preorder['processed_at'][:19]}\n"
+    if preorder.get('processed_by'):
+        text += f"👤 **Обработал:** `{preorder['processed_by']}`\n"
+
+    if preorder['status'] in ['paid']:
+        reply_markup = get_confirm_preorder_keyboard(preorder_id)
+    else:
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 К предзаказам", callback_data="admin_preorders_list")]
+        ])
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def confirm_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, preorder_id: str):
+    """Подтверждение предзаказа (перевод в completed)"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    admin_id = query.from_user.id
+    if not is_admin(admin_id):
+        return
+
+    preorder = next((p for p in preorders if p['id'] == preorder_id), None)
+    if not preorder:
+        await safe_answer_query(query, "❌ Предзаказ не найден", show_alert=True)
+        return
+
+    if preorder['status'] != 'paid':
+        await safe_answer_query(query, "❌ Предзаказ не в статусе 'paid'", show_alert=True)
+        return
+
+    preorder['status'] = 'completed'
+    preorder['processed_at'] = datetime.now().isoformat()
+    preorder['processed_by'] = admin_id
+    save_preorders()
+
+    # Уведомляем пользователя
+    try:
+        await context.bot.send_message(
+            chat_id=preorder['user_id'],
+            text=(
+                f"✅ **Ваш предзаказ #{preorder_id[:8]} подтверждён!**\n\n"
+                f"🛍️ **Товар:** {preorder['product_name']}\n"
+                f"📊 **Количество:** {preorder['quantity']}\n"
+                f"💰 **Сумма:** {preorder['total_price']} USDT\n\n"
+                f"Спасибо за ожидание! Если товар требует передачи, администратор свяжется с вами."
+            ),
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 Мои предзаказы", callback_data="my_preorders")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Не удалось уведомить пользователя {preorder['user_id']}: {e}")
+
+    await safe_answer_query(query, "✅ Предзаказ подтверждён", show_alert=True)
+    await admin_preorders_list_handler(update, context)
+
+async def reject_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, preorder_id: str):
+    """Отмена предзаказа с возвратом денег"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    admin_id = query.from_user.id
+    if not is_admin(admin_id):
+        return
+
+    preorder = next((p for p in preorders if p['id'] == preorder_id), None)
+    if not preorder:
+        await safe_answer_query(query, "❌ Предзаказ не найден", show_alert=True)
+        return
+
+    if preorder['status'] != 'paid':
+        await safe_answer_query(query, "❌ Предзаказ не в статусе 'paid'", show_alert=True)
+        return
+
+    # Возвращаем деньги
+    user_data = ensure_user_registered(preorder['user_id'])
+    user_data['balance_usdt'] += preorder['total_price']
+    save_users()
+
+    preorder['status'] = 'cancelled'
+    preorder['processed_at'] = datetime.now().isoformat()
+    preorder['processed_by'] = admin_id
+    save_preorders()
+
+    # Уведомляем пользователя
+    try:
+        await context.bot.send_message(
+            chat_id=preorder['user_id'],
+            text=(
+                f"❌ **Ваш предзаказ #{preorder_id[:8]} отменён.**\n\n"
+                f"🛍️ **Товар:** {preorder['product_name']}\n"
+                f"📊 **Количество:** {preorder['quantity']}\n"
+                f"💰 **Сумма возврата:** {preorder['total_price']} USDT\n"
+                f"💳 **Новый баланс:** {user_data['balance_usdt']:.2f} USDT\n\n"
+                f"По вопросам обратитесь к администратору @{ADMIN_USERNAME}."
+            ),
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 Мои предзаказы", callback_data="my_preorders")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Не удалось уведомить пользователя {preorder['user_id']}: {e}")
+
+    await safe_answer_query(query, "❌ Предзаказ отменён, деньги возвращены", show_alert=True)
+    await admin_preorders_list_handler(update, context)
+
 # ========== БЕЗОПАСНЫЕ ФУНКЦИИ ==========
 async def safe_answer_query(query, text=None, show_alert=False):
     try:
@@ -4663,6 +5237,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await process_purchase(update, context, product_id, quantity)
             return
 
+        # Предзаказы пользователя
+        elif data == "my_preorders":
+            await my_preorders_handler(update, context)
+            return
+        elif data.startswith("view_preorder:"):
+            preorder_id = data.split(":", 1)[1]
+            await view_preorder_handler(update, context, preorder_id)
+            return
+        elif data.startswith("preorder_product:"):
+            product_id = data.split(":", 1)[1]
+            await preorder_product_handler(update, context, product_id)
+            return
+
         # Админские кнопки
         if is_admin(user_id):
             # Управление категориями
@@ -4828,6 +5415,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 request_id = data.split(":", 1)[1]
                 await reject_request_handler(update, context, request_id)
                 return
+            # Предзаказы админа
+            elif data == "admin_preorders_list":
+                await admin_preorders_list_handler(update, context)
+                return
+            elif data.startswith("view_admin_preorder:"):
+                preorder_id = data.split(":", 1)[1]
+                await view_admin_preorder_handler(update, context, preorder_id)
+                return
+            elif data.startswith("confirm_preorder:"):
+                preorder_id = data.split(":", 1)[1]
+                await confirm_preorder_handler(update, context, preorder_id)
+                return
+            elif data.startswith("reject_preorder:"):
+                preorder_id = data.split(":", 1)[1]
+                await reject_preorder_handler(update, context, preorder_id)
+                return
             elif data == "back_to_admin":
                 await admin_panel_handler(update, context)
                 return
@@ -4932,7 +5535,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Промокод
+    # Предзаказ: ввод количества
+    if context.user_data.get('awaiting_preorder_quantity'):
+        await process_preorder_quantity(update, context, text)
+        return
+
+    # Предзаказ: ввод данных
+    if context.user_data.get('awaiting_preorder_data'):
+        await process_preorder_data(update, context, text)
+        return
+
+    # Промокод: ввод кода
     if context.user_data.get('awaiting_promo_code'):
         success, msg = await activate_promocode(user_id, text, context)
         await update.message.reply_text(
@@ -4951,10 +5564,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Сумма должна быть больше 0.")
                 return
             context.user_data['promo_balance_amount'] = amount
-            context.user_data['awaiting_promo_balance_code'] = True
+            context.user_data['awaiting_promo_balance_limit'] = True
             del context.user_data['awaiting_promo_balance_amount']
             await update.message.reply_text(
-                f"💰 Сумма: {amount} USDT\n\nВведите код промокода (или оставьте пустым для автогенерации):",
+                f"💰 Сумма: {amount} USDT\n\nВведите максимальное количество активаций (целое число, 0 = безлимит):",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Отмена", callback_data="admin_manage_promocodes")]
                 ])
@@ -4963,15 +5576,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неверный формат суммы. Введите число.")
         return
 
+    if context.user_data.get('awaiting_promo_balance_limit') and is_admin(user_id):
+        try:
+            limit = int(text)
+            if limit < 0:
+                await update.message.reply_text("❌ Лимит не может быть отрицательным.")
+                return
+            context.user_data['promo_balance_limit'] = limit
+            context.user_data['awaiting_promo_balance_code'] = True
+            del context.user_data['awaiting_promo_balance_limit']
+            await update.message.reply_text(
+                f"💰 Сумма: {context.user_data['promo_balance_amount']} USDT\n"
+                f"📊 Лимит: {limit if limit > 0 else 'безлимит'}\n\n"
+                f"Введите код промокода (или оставьте пустым для автогенерации):",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Отмена", callback_data="admin_manage_promocodes")]
+                ])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат лимита. Введите целое число.")
+        return
+
     if context.user_data.get('awaiting_promo_balance_code') and is_admin(user_id):
         code = text.strip().upper()
         if not code:
             code = generate_promo_code()
         amount = context.user_data.get('promo_balance_amount')
+        limit = context.user_data.get('promo_balance_limit', 0)
         promocodes[code] = {
             'code': code,
             'type': 'balance',
             'value': amount,
+            'max_uses': limit,
+            'used_count': 0,
             'created_by': user_id,
             'created_at': datetime.now().isoformat(),
             'active': True
@@ -4979,23 +5616,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_promocodes()
         del context.user_data['awaiting_promo_balance_code']
         del context.user_data['promo_balance_amount']
+        del context.user_data['promo_balance_limit']
         await update.message.reply_text(
-            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: денежный\nСумма: {amount} USDT",
+            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: денежный\nСумма: {amount} USDT\nЛимит: {limit if limit > 0 else 'безлимит'}",
             parse_mode='Markdown',
             reply_markup=get_admin_promocodes_keyboard()
         )
         return
 
-    # Админ: ввод кода для товарного промокода
+    # Админ: создание товарного промокода (после выбора товара запрашиваем лимит)
+    if context.user_data.get('promo_item_product') and context.user_data.get('awaiting_promo_item_limit') is None and is_admin(user_id):
+        # Этот блок не нужен, лимит запрашивается после выбора товара
+        pass
+
+    if context.user_data.get('awaiting_promo_item_limit') and is_admin(user_id):
+        try:
+            limit = int(text)
+            if limit < 0:
+                await update.message.reply_text("❌ Лимит не может быть отрицательным.")
+                return
+            context.user_data['promo_item_limit'] = limit
+            context.user_data['awaiting_promo_item_code'] = True
+            del context.user_data['awaiting_promo_item_limit']
+            await update.message.reply_text(
+                f"📊 Лимит: {limit if limit > 0 else 'безлимит'}\n\n"
+                f"Введите код промокода (или оставьте пустым для автогенерации):",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Отмена", callback_data="admin_manage_promocodes")]
+                ])
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат лимита. Введите целое число.")
+        return
+
     if context.user_data.get('awaiting_promo_item_code') and is_admin(user_id):
         code = text.strip().upper()
         if not code:
             code = generate_promo_code()
         product_id = context.user_data.get('promo_item_product')
+        limit = context.user_data.get('promo_item_limit', 0)
         promocodes[code] = {
             'code': code,
             'type': 'item',
             'value': product_id,
+            'max_uses': limit,
+            'used_count': 0,
             'created_by': user_id,
             'created_at': datetime.now().isoformat(),
             'active': True
@@ -5003,10 +5668,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_promocodes()
         del context.user_data['awaiting_promo_item_code']
         del context.user_data['promo_item_product']
+        del context.user_data['promo_item_limit']
         product = next((p for p in catalog if p['id'] == product_id), None)
         product_name = product['name'] if product else "Товар"
         await update.message.reply_text(
-            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: товарный\nТовар: {product_name}",
+            f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: товарный\nТовар: {product_name}\nЛимит: {limit if limit > 0 else 'безлимит'}",
             parse_mode='Markdown',
             reply_markup=get_admin_promocodes_keyboard()
         )
@@ -5402,15 +6068,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== ГЛАВНАЯ ФУНКЦИЯ ==========
 def main():
     print("=" * 50)
-    print("🤖 ЗАПУСК БОТА С CRYPTOBOT, ИЕРАРХИЧЕСКИМИ КАТЕГОРИЯМИ, ПРОМОКОДАМИ И ЗАЯВКАМИ")
+    print("🤖 ЗАПУСК БОТА С CRYPTOBOT, ИЕРАРХИЧЕСКИМИ КАТЕГОРИЯМИ, ПРОМОКОДАМИ, ЗАЯВКАМИ И ПРЕДЗАКАЗАМИ")
     print("=" * 50)
     print("📁 **ИЕРАРХИЯ КАТЕГОРИЙ:** Категория → Подкатегория → Тип")
     print("📁 **ТИПЫ В КАТЕГОРИИ:** Теперь можно создавать типы прямо в категориях (без подкатегорий)")
     print("📦 **МАССОВАЯ ЗАГРУЗКА:** Загрузка файлов в конкретный тип")
     print("🛡️ **УПРАВЛЕНИЕ КАТЕГОРИЯМИ:** Добавление/удаление категорий, подкатегорий, типов")
     print("🛍️ **МОИ ПОКУПКИ:** Раздел для просмотра купленных товаров")
-    print("🎟️ **ПРОМОКОДЫ:** Денежные и товарные промокоды")
+    print("🎟️ **ПРОМОКОДЫ:** Денежные и товарные промокоды с лимитами")
     print("📋 **ЗАЯВКИ НА ПОПОЛНЕНИЕ:** Пополнение через администратора с подтверждением")
+    print("📦 **ПРЕДЗАКАЗЫ:** Возможность оформить предзаказ с оплатой и вводом данных")
     print("⚡ **ОПТИМИЗАЦИЯ:** Кэширование данных, атомарная запись файлов")
     print("=" * 50)
 
@@ -5446,6 +6113,7 @@ def main():
     print(f"• Администраторов: {len(admins)}")
     print(f"• Промокодов: {len(promocodes)}")
     print(f"• Заявок: {len(requests_dict)}")
+    print(f"• Предзаказов: {len(preorders)}")
     print("=" * 50)
 
     application = Application.builder().token(TOKEN).build()
