@@ -434,7 +434,6 @@ def remove_admin(user_id: int) -> bool:
 
 # ========== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ТОВАРАМИ ==========
 
-# ИСПРАВЛЕНО: добавлена функция создания placeholder-товара
 def create_placeholder_product(category: str, subcategory: str = "", type_: str = "") -> dict:
     """Создаёт служебный товар, чтобы категория/подкатегория/тип существовали в каталоге."""
     return {
@@ -455,7 +454,6 @@ def create_placeholder_product(category: str, subcategory: str = "", type_: str 
 
 def is_product_available(product) -> bool:
     """Оптимизированная проверка доступности товара с кэшированием"""
-    # ИСПРАВЛЕНО: исключаем служебные товары
     if product.get('is_placeholder', False):
         return False
 
@@ -470,8 +468,6 @@ def is_product_available(product) -> bool:
         if product.get('has_file'):
             if product.get('file_path') is None:
                 return False
-            # Оптимизация: не проверяем существование файла при каждом запросе
-            # Используем кэшированный результат
             return True
     
     if product.get('is_bundle', False):
@@ -883,6 +879,7 @@ def get_category_management_keyboard():
         [InlineKeyboardButton("📝 Создать тип в подкатегории", callback_data="admin_add_type_to_subcategory")],
         [InlineKeyboardButton("📋 Просмотреть структуру каталога", callback_data="admin_view_structure")],
         [InlineKeyboardButton("🗑️ Удалить категорию", callback_data="admin_delete_category")],
+        [InlineKeyboardButton("🗑️ Удалить подкатегорию", callback_data="admin_delete_subcategory")],  # НОВАЯ КНОПКА
         [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")],
         [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
     ])
@@ -895,6 +892,17 @@ def get_confirm_delete_category_keyboard(category: str):
             InlineKeyboardButton("❌ Нет, отменить", callback_data="admin_manage_categories")
         ],
         [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")]
+    ])
+
+# НОВАЯ функция для клавиатуры подтверждения удаления подкатегории
+def get_confirm_delete_subcategory_keyboard(category: str, subcategory: str):
+    """Клавиатура для подтверждения удаления подкатегории"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Да, удалить подкатегорию", callback_data=f"final_delete_subcategory:{category}:{subcategory}"),
+            InlineKeyboardButton("❌ Нет, отменить", callback_data="admin_manage_categories")
+        ],
+        [InlineKeyboardButton("🔙 Назад", callback_data=f"select_category_for_delete_subcat:{category}")]
     ])
 
 def get_back_to_categories_keyboard():
@@ -3281,6 +3289,155 @@ async def final_delete_category_handler(update: Update, context: ContextTypes.DE
         reply_markup=get_back_to_categories_keyboard()
     )
 
+# ========== НОВЫЕ ФУНКЦИИ ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ ==========
+
+async def admin_delete_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало удаления подкатегории: показываем список категорий"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+    
+    categories = get_categories()
+    
+    if not categories:
+        await safe_edit_message_text(
+            query=query,
+            text="📭 **Нет категорий для удаления подкатегорий!**\n\n"
+                "Сначала создайте категорию.",
+            parse_mode='Markdown',
+            reply_markup=get_back_to_categories_keyboard()
+        )
+        return
+    
+    keyboard = []
+    for category in categories:
+        keyboard.append([InlineKeyboardButton(f"📁 {category}", callback_data=f"select_category_for_delete_subcat:{category}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
+    
+    await safe_edit_message_text(
+        query=query,
+        text="🗑️ **Удаление подкатегории**\n\n"
+            "Выберите категорию, в которой хотите удалить подкатегорию:",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def select_category_for_delete_subcat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
+    """Выбор подкатегории для удаления"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+    
+    subcategories = get_subcategories(category)
+    
+    if not subcategories:
+        await safe_edit_message_text(
+            query=query,
+            text=f"❌ **В категории '{category}' нет подкатегорий для удаления!**",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 К выбору категории", callback_data="admin_delete_subcategory")]
+            ])
+        )
+        return
+    
+    keyboard = []
+    for subcategory in subcategories:
+        product_count = len(get_products_by_path(category, subcategory))
+        keyboard.append([InlineKeyboardButton(
+            f"🗑️ {subcategory} ({product_count} товаров)", 
+            callback_data=f"select_subcategory_for_delete:{category}:{subcategory}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_delete_subcategory")])
+    
+    await safe_edit_message_text(
+        query=query,
+        text=f"🗑️ **Удаление подкатегории в категории '{category}'**\n\n"
+            "Выберите подкатегорию для удаления:",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def select_subcategory_for_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
+    """Подтверждение удаления подкатегории"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+    
+    product_count = len(get_products_by_path(category, subcategory))
+    
+    confirm_text = (
+        f"⚠️ **Подтверждение удаления подкатегории:**\n\n"
+        f"📁 **Категория:** {category}\n"
+        f"📂 **Подкатегория:** {subcategory}\n"
+        f"📦 **Товаров в подкатегории:** {product_count}\n\n"
+        f"❌ **Все данные подкатегории будут безвозвратно удалены!**\n\n"
+        f"Вы уверены, что хотите удалить подкатегорию '{subcategory}'?"
+    )
+    
+    await safe_edit_message_text(
+        query=query,
+        text=confirm_text,
+        parse_mode='Markdown',
+        reply_markup=get_confirm_delete_subcategory_keyboard(category, subcategory)
+    )
+
+async def final_delete_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
+    """Финальное удаление подкатегории"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+    
+    products_to_delete = [p for p in catalog if p.get('category') == category and p.get('subcategory') == subcategory]
+    deleted_count = 0
+    
+    for product in products_to_delete:
+        if product.get('has_file') and product.get('file_path'):
+            try:
+                file_path = product.get('file_path')
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                logger.error(f"Ошибка удаления файла {product['file_path']}: {e}")
+        
+        catalog[:] = [p for p in catalog if p['id'] != product['id']]
+        deleted_count += 1
+    
+    save_catalog()
+    
+    await safe_edit_message_text(
+        query=query,
+        text=f"✅ **Подкатегория '{subcategory}' успешно удалена!**\n\n"
+            f"📊 **Удалено товаров:** {deleted_count}\n\n"
+            f"Все данные подкатегории были безвозвратно удалены.",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 К управлению категориями", callback_data="admin_manage_categories")]
+        ])
+    )
+
 # ========== УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ ==========
 
 async def admin_manage_admins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3933,7 +4090,7 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             
             available_files = get_available_files_count(bundle_files)
             
-            # ИСПРАВЛЕНО: вынесли условную строку в отдельную переменную
+            # Исправлено: вынесено условие в отдельную переменную
             subcategory_line = f"📂 Подкатегория: {subcategory}\n" if subcategory else ""
             
             await update.message.reply_text(
@@ -4579,6 +4736,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await admin_add_type_to_subcategory_handler(update, context)
                 return
             
+            # НОВЫЙ ОБРАБОТЧИК ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ
+            elif data == "admin_delete_subcategory":
+                await admin_delete_subcategory_handler(update, context)
+                return
+            
             elif data.startswith("select_category_for_subcat:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_subcategory_handler(update, context, category)
@@ -4594,12 +4756,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await select_category_for_type_to_category_handler(update, context, category)
                 return
             
+            # НОВЫЙ ОБРАБОТЧИК ВЫБОРА КАТЕГОРИИ ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ
+            elif data.startswith("select_category_for_delete_subcat:"):
+                category = data.split(":", 1)[1]
+                await select_category_for_delete_subcat_handler(update, context, category)
+                return
+            
             elif data.startswith("select_subcategory_for_type:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
                     category = parts[1]
                     subcategory = parts[2]
                     await select_subcategory_for_type_handler(update, context, category, subcategory)
+                return
+            
+            # НОВЫЙ ОБРАБОТЧИК ВЫБОРА ПОДКАТЕГОРИИ ДЛЯ УДАЛЕНИЯ
+            elif data.startswith("select_subcategory_for_delete:"):
+                parts = data.split(":", 2)
+                if len(parts) == 3:
+                    category = parts[1]
+                    subcategory = parts[2]
+                    await select_subcategory_for_delete_handler(update, context, category, subcategory)
                 return
             
             elif data == "admin_view_structure":
@@ -4618,6 +4795,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif data.startswith("final_delete_category:"):
                 category = data.split(":", 1)[1]
                 await final_delete_category_handler(update, context, category)
+                return
+            
+            # НОВЫЙ ОБРАБОТЧИК ФИНАЛЬНОГО УДАЛЕНИЯ ПОДКАТЕГОРИИ
+            elif data.startswith("final_delete_subcategory:"):
+                parts = data.split(":", 2)
+                if len(parts) == 3:
+                    category = parts[1]
+                    subcategory = parts[2]
+                    await final_delete_subcategory_handler(update, context, category, subcategory)
                 return
             
             elif data == "admin_bulk_upload_to_type":
