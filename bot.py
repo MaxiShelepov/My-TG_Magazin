@@ -77,8 +77,7 @@ purchases = {}
 promocodes = {}
 requests_dict = {}
 
-# ========== КЭШИРОВАНИЕ ДЛЯ ПОВЫШЕНИЯ ПРОИЗВОДИТЕЛЬНОСТИ ==========
-
+# ========== КЭШИРОВАНИЕ ==========
 _categories_cache = None
 _categories_cache_time = 0
 _subcategories_cache = {}
@@ -86,11 +85,9 @@ _types_cache = {}
 _products_cache = {}
 _available_products_cache = None
 _available_products_cache_time = 0
-
-CACHE_TTL = 30  # Время жизни кэша в секундах
+CACHE_TTL = 30
 
 def invalidate_caches():
-    """Сбрасывает все кэши при изменении каталога"""
     global _categories_cache, _categories_cache_time, _subcategories_cache, _types_cache, _products_cache
     global _available_products_cache, _available_products_cache_time
     _categories_cache = None
@@ -102,11 +99,9 @@ def invalidate_caches():
     _available_products_cache_time = 0
 
 def is_cache_valid(cache_time: float) -> bool:
-    """Проверяет, актуален ли кэш"""
     return time.time() - cache_time < CACHE_TTL
 
 # ========== CRYPTOBOT API ==========
-
 class CryptoBotAPI:
     def __init__(self, token: str, test_mode: bool = True):
         self.token = token
@@ -115,30 +110,28 @@ class CryptoBotAPI:
         self.session = None
         self._request_cache = {}
         self._cache_time = 0
-    
+
     async def create_session(self):
         if not self.session:
             self.session = aiohttp.ClientSession()
-    
+
     async def close_session(self):
         if self.session:
             await self.session.close()
             self.session = None
-    
+
     async def _make_request(self, method: str, endpoint: str, data: Optional[Dict] = None):
         try:
             await self.create_session()
-            
             url = f"{self.base_url}/{endpoint}"
             headers = {
                 "Crypto-Pay-API-Token": self.token,
                 "Content-Type": "application/json"
             }
-            
             params = {}
             if self.test_mode:
                 params['test'] = 'true'
-            
+
             if method.upper() == "GET":
                 async with self.session.get(url, headers=headers, params=params) as response:
                     return await response.json()
@@ -147,11 +140,10 @@ class CryptoBotAPI:
                     return await response.json()
             else:
                 raise ValueError(f"Неизвестный метод: {method}")
-                
         except Exception as e:
             logger.error(f"Ошибка запроса к CryptoBot API: {e}")
             return {"ok": False, "error": str(e)}
-    
+
     async def create_invoice(self, amount: float, description: str = "Пополнение баланса"):
         try:
             data = {
@@ -166,9 +158,7 @@ class CryptoBotAPI:
                 "allow_anonymous": False,
                 "expires_in": 3600
             }
-            
             result = await self._make_request("POST", "createInvoice", data)
-            
             if result.get("ok") and result.get("result"):
                 invoice = result["result"]
                 return {
@@ -185,15 +175,13 @@ class CryptoBotAPI:
             else:
                 logger.error(f"Ошибка создания счета: {result}")
                 return None
-                
         except Exception as e:
             logger.error(f"Ошибка создания счета: {e}")
             return None
-    
+
     async def check_invoice_status(self, invoice_id: str):
         try:
             result = await self._make_request("GET", f"getInvoices?invoice_ids={invoice_id}")
-            
             if result.get("ok") and result.get("result") and result["result"]["items"]:
                 invoice = result["result"]["items"][0]
                 return {
@@ -206,7 +194,6 @@ class CryptoBotAPI:
             else:
                 logger.error(f"Ошибка проверки счета: {result}")
                 return None
-                
         except Exception as e:
             logger.error(f"Ошибка проверки счета: {e}")
             return None
@@ -214,9 +201,7 @@ class CryptoBotAPI:
 crypto_bot = CryptoBotAPI(CRYPTO_BOT_TOKEN, CRYPTO_BOT_TEST_MODE)
 
 # ========== ЗАГРУЗКА И СОХРАНЕНИЕ ДАННЫХ ==========
-
 def atomic_json_dump(data, filepath):
-    """Атомарная запись JSON файла с временным файлом"""
     temp_file = f"{filepath}.tmp"
     try:
         with open(temp_file, 'w', encoding='utf-8') as f:
@@ -233,7 +218,6 @@ def atomic_json_dump(data, filepath):
 
 def load_data():
     global users, catalog, orders, invoices, admins, purchases, promocodes, requests_dict
-    
     try:
         if os.path.exists(USERS_FILE):
             with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -242,7 +226,7 @@ def load_data():
         else:
             users = {}
             save_users()
-        
+
         if os.path.exists(CATALOG_FILE):
             with open(CATALOG_FILE, 'r', encoding='utf-8') as f:
                 catalog = json.load(f)
@@ -250,7 +234,7 @@ def load_data():
         else:
             catalog = []
             save_catalog()
-        
+
         if os.path.exists(ORDERS_FILE):
             with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
                 orders = json.load(f)
@@ -258,7 +242,7 @@ def load_data():
         else:
             orders = []
             save_orders()
-        
+
         if os.path.exists(INVOICES_FILE):
             with open(INVOICES_FILE, 'r', encoding='utf-8') as f:
                 invoices = json.load(f)
@@ -266,7 +250,7 @@ def load_data():
         else:
             invoices = {}
             save_invoices()
-        
+
         if os.path.exists(ADMINS_FILE):
             with open(ADMINS_FILE, 'r', encoding='utf-8') as f:
                 loaded_admins = json.load(f)
@@ -277,7 +261,7 @@ def load_data():
         else:
             admins = [BOT_OWNER_ID]
             save_admins()
-        
+
         if os.path.exists(PURCHASES_FILE):
             with open(PURCHASES_FILE, 'r', encoding='utf-8') as f:
                 purchases = json.load(f)
@@ -285,7 +269,7 @@ def load_data():
         else:
             purchases = {}
             save_purchases()
-        
+
         if os.path.exists(PROMOCODES_FILE):
             with open(PROMOCODES_FILE, 'r', encoding='utf-8') as f:
                 promocodes = json.load(f)
@@ -293,7 +277,7 @@ def load_data():
         else:
             promocodes = {}
             save_promocodes()
-        
+
         if os.path.exists(REQUESTS_FILE):
             with open(REQUESTS_FILE, 'r', encoding='utf-8') as f:
                 requests_dict = json.load(f)
@@ -301,10 +285,8 @@ def load_data():
         else:
             requests_dict = {}
             save_requests()
-            
-        # Инвалидация кэша при загрузке данных
+
         invalidate_caches()
-            
     except Exception as e:
         logger.error(f"Ошибка загрузки данных: {e}")
         users = {}
@@ -342,25 +324,20 @@ def save_requests():
     atomic_json_dump(requests_dict, REQUESTS_FILE)
 
 def escape_username(username: str) -> str:
-    """Экранирует специальные символы в username"""
     if not username:
         return "unknown"
     return username.replace("_", "-").replace("@", "").replace("!", "").replace("#", "")
 
 def ensure_user_registered(user_id, user_data=None):
     user_id_str = str(user_id)
-    
     if user_id_str not in users:
         if user_data:
             users[user_id_str] = user_data
         else:
-            username = "unknown"
-            first_name = "User"
-            
             users[user_id_str] = {
                 "id": user_id,
-                "username": username,
-                "first_name": first_name,
+                "username": "unknown",
+                "first_name": "User",
                 "balance_usdt": 0.0,
                 "joined": datetime.now().isoformat(),
                 "orders": [],
@@ -368,81 +345,57 @@ def ensure_user_registered(user_id, user_data=None):
                 "crypto_invoices": []
             }
         save_users()
-    
     return users[user_id_str]
 
 def update_user_info(user_id: int, username: str = None, first_name: str = None):
-    """Обновляет информацию о пользователе с экранированием специальных символов"""
     user_id_str = str(user_id)
-    
     if user_id_str not in users:
         ensure_user_registered(user_id)
-    
     user_data = users[user_id_str]
-    
     if username is not None:
         user_data['username'] = escape_username(username)
-    
     if first_name is not None:
         user_data['first_name'] = first_name.replace("_", "-")
-    
     save_users()
-    
     return user_data
 
-# ========== ФУНКЦИИ ДЛЯ РАБОТЫ С ПОКУПКАМИ ==========
-
+# ========== ПОКУПКИ ==========
 def add_user_purchase(user_id: int, purchase_data: dict):
-    """Добавляет покупку пользователю"""
     user_id_str = str(user_id)
-    
     if user_id_str not in purchases:
         purchases[user_id_str] = []
-    
     purchase_id = str(uuid.uuid4())[:8]
     purchase_data["purchase_id"] = purchase_id
     purchase_data["purchased_at"] = datetime.now().isoformat()
-    
     purchases[user_id_str].append(purchase_data)
     save_purchases()
-    
     return purchase_id
 
 def get_user_purchases(user_id: int):
-    """Получает все покупки пользователя с кэшированием"""
     user_id_str = str(user_id)
-    
     if user_id_str not in purchases:
         return []
-    
     user_purchases = purchases[user_id_str]
     user_purchases.sort(key=lambda x: x.get("purchased_at", ""), reverse=True)
-    
     return user_purchases
 
 def get_user_purchase_by_id(user_id: int, purchase_id: str):
-    """Получает конкретную покупку пользователя по ID"""
     user_purchases = get_user_purchases(user_id)
-    
     for purchase in user_purchases:
         if purchase.get("purchase_id") == purchase_id:
             return purchase
-    
     return None
 
 def get_purchase_file_path(purchase_data: dict):
-    """Получает путь к файлу из данных о покупке"""
     if "file_path" in purchase_data:
         return purchase_data["file_path"]
     elif "bundle_files" in purchase_data:
         bundle_files = purchase_data.get("bundle_files", [])
         if bundle_files and len(bundle_files) > 0:
             return bundle_files[0].get("path")
-    
     return None
 
 # ========== АДМИНИСТРАТОРЫ ==========
-
 def is_admin(user_id: int) -> bool:
     return user_id in admins
 
@@ -463,10 +416,8 @@ def remove_admin(user_id: int) -> bool:
         return True
     return False
 
-# ========== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ТОВАРАМИ ==========
-
+# ========== ФУНКЦИИ ДЛЯ ТОВАРОВ ==========
 def create_placeholder_product(category: str, subcategory: str = "", type_: str = "") -> dict:
-    """Создаёт служебный товар, чтобы категория/подкатегория/тип существовали в каталоге."""
     return {
         "id": f"placeholder_{uuid.uuid4().hex[:8]}",
         "name": f"__placeholder__{category}_{subcategory}_{type_}",
@@ -480,55 +431,43 @@ def create_placeholder_product(category: str, subcategory: str = "", type_: str 
         "quantity": 0,
         "created_at": datetime.now().isoformat(),
         "sold": False,
-        "is_placeholder": True   # метка, по которой будем исключать товар из доступных
+        "is_placeholder": True
     }
 
 def is_product_available(product) -> bool:
-    """Оптимизированная проверка доступности товара с кэшированием"""
     if product.get('is_placeholder', False):
         return False
-
     if product.get('sold', False):
         return False
-    
     if not product.get('is_bundle', False):
         quantity = product.get('quantity', 1)
         if quantity <= 0:
             return False
-        
         if product.get('has_file'):
             if product.get('file_path') is None:
                 return False
             return True
-    
     if product.get('is_bundle', False):
         bundle_files = product.get('bundle_files', [])
         if not bundle_files or len(bundle_files) == 0:
             return False
-        
         available_count = get_available_files_count(bundle_files)
         if available_count <= 0:
             return False
-    
     return True
 
 def get_available_products():
-    """Кэшированное получение доступных товаров"""
     global _available_products_cache, _available_products_cache_time
-    
     if _available_products_cache is not None and is_cache_valid(_available_products_cache_time):
         return _available_products_cache
-    
     available = [p for p in catalog if is_product_available(p)]
     _available_products_cache = available
     _available_products_cache_time = time.time()
-    
     return available
 
 def get_unique_product_name(base_name: str, existing_names: Set[str]) -> str:
     if base_name not in existing_names:
         return base_name
-    
     counter = 1
     while True:
         new_name = f"{base_name} ({counter})"
@@ -538,20 +477,16 @@ def get_unique_product_name(base_name: str, existing_names: Set[str]) -> str:
 
 def get_random_files_from_bundle(bundle_files: List[Dict], count: int) -> List[Dict]:
     available_files = [f for f in bundle_files if not f.get('sold', False)]
-    
     if not available_files:
         return []
-    
     if count >= len(available_files):
         return available_files.copy()
-    
     files_copy = available_files.copy()
     random.shuffle(files_copy)
     return files_copy[:count]
 
 def mark_files_as_sold(bundle_files: List[Dict], files_to_sell: List[Dict]):
     sold_file_names = {f['name'] for f in files_to_sell}
-    
     for file_info in bundle_files:
         if file_info['name'] in sold_file_names:
             file_info['sold'] = True
@@ -560,60 +495,45 @@ def mark_files_as_sold(bundle_files: List[Dict], files_to_sell: List[Dict]):
 def get_available_files_count(bundle_files: List[Dict]) -> int:
     if not bundle_files:
         return 0
-    
     available_count = 0
     for file_info in bundle_files:
         if not file_info.get('sold', False):
             available_count += 1
-    
     return available_count
 
 def get_categories() -> List[str]:
-    """Получить список всех категорий с кэшированием"""
     global _categories_cache, _categories_cache_time
-    
     if _categories_cache is not None and is_cache_valid(_categories_cache_time):
         return _categories_cache
-    
     categories = set()
     for product in catalog:
         if product.get('category'):
             categories.add(product['category'])
-    
     result = sorted(categories)
     _categories_cache = result
     _categories_cache_time = time.time()
-    
     return result
 
 def get_subcategories(category: str) -> List[str]:
-    """Получить список подкатегорий для категории с кэшированием"""
     cache_key = f"subcats_{category}"
-    
     if cache_key in _subcategories_cache:
         cached_data, cache_time = _subcategories_cache[cache_key]
         if is_cache_valid(cache_time):
             return cached_data
-    
     subcategories = set()
     for product in catalog:
         if product.get('category') == category and product.get('subcategory'):
             subcategories.add(product['subcategory'])
-    
     result = sorted(subcategories)
     _subcategories_cache[cache_key] = (result, time.time())
-    
     return result
 
 def get_types(category: str, subcategory: str = None) -> List[str]:
-    """Получить список типов для категории (и подкатегории) с кэшированием"""
     cache_key = f"types_{category}_{subcategory if subcategory else 'None'}"
-    
     if cache_key in _types_cache:
         cached_data, cache_time = _types_cache[cache_key]
         if is_cache_valid(cache_time):
             return cached_data
-    
     types = set()
     for product in catalog:
         if product.get('category') == category:
@@ -621,23 +541,17 @@ def get_types(category: str, subcategory: str = None) -> List[str]:
                 continue
             if product.get('type'):
                 types.add(product['type'])
-    
     result = sorted(types)
     _types_cache[cache_key] = (result, time.time())
-    
     return result
 
 def get_products_by_path(category: str = None, subcategory: str = None, type_: str = None) -> List[Dict]:
-    """Получить товары по пути категория->подкатегория->тип с кэшированием"""
     cache_key = f"products_{category}_{subcategory if subcategory else 'None'}_{type_ if type_ else 'None'}"
-    
     if cache_key in _products_cache:
         cached_data, cache_time = _products_cache[cache_key]
         if is_cache_valid(cache_time):
             return cached_data
-    
     filtered_products = []
-    
     for product in catalog:
         if category and product.get('category') != category:
             continue
@@ -645,20 +559,14 @@ def get_products_by_path(category: str = None, subcategory: str = None, type_: s
             continue
         if type_ and product.get('type') != type_:
             continue
-        
         filtered_products.append(product)
-    
     _products_cache[cache_key] = (filtered_products, time.time())
-    
     return filtered_products
 
 def generate_unique_bundle_name(base_name: str) -> str:
-    """Генерирует уникальное имя для набора файлов"""
     existing_names = {p['name'] for p in catalog if 'bundle' in p['name'].lower()}
-    
     if base_name not in existing_names:
         return base_name
-    
     counter = 1
     while True:
         new_name = f"{base_name} #{counter}"
@@ -667,46 +575,43 @@ def generate_unique_bundle_name(base_name: str) -> str:
         counter += 1
 
 def get_category_types_keyboard(category: str):
-    """Клавиатура для типов в категории (без подкатегории)"""
     types = get_types(category, None)
-    
     keyboard = []
     for type_ in types:
         keyboard.append([InlineKeyboardButton(f"📝 {type_}", callback_data=f"type_no_subcat_{category}_{type_}")])
-    
     has_no_type = any(
         p for p in get_available_products()
-        if p.get('category') == category and 
-        not p.get('type')
+        if p.get('category') == category and not p.get('type')
     )
-    
     if has_no_type:
         keyboard.append([InlineKeyboardButton("📦 Без типа", callback_data=f"category_{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 К категориям", callback_data="back_to_categories")])
     keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
-# ========== INLINE КЛАВИАТУРЫ (ОСНОВНОЕ МЕНЮ) ==========
-
+# ========== INLINE КЛАВИАТУРЫ ==========
 def get_main_inline_keyboard(user_id: int = None):
-    """Inline клавиатура для основного меню"""
+    """Главное меню – убраны лишние кнопки"""
     keyboard = [
         [InlineKeyboardButton("🛍️ Каталог", callback_data="catalog_menu")],
         [InlineKeyboardButton("👤 Личный кабинет", callback_data="personal_account")],
         [InlineKeyboardButton("💳 Пополнить USDT", callback_data="deposit_menu")],
-        [InlineKeyboardButton("📦 Мои покупки", callback_data="my_purchases")],
         [InlineKeyboardButton("📊 Доступные товары", callback_data="available_products")],
-        [InlineKeyboardButton("📋 Мои счета", callback_data="my_invoices")],
-        [InlineKeyboardButton("🎟️ Промокод", callback_data="promo_code")],
-        [InlineKeyboardButton("💳 Пополнить через админа", callback_data="deposit_admin_start")],
         [InlineKeyboardButton("🆘 Поддержка", callback_data="support")]
     ]
-    
     if user_id and is_admin(user_id):
         keyboard.append([InlineKeyboardButton("👑 Админ-панель", callback_data="admin_panel")])
-    
+    return InlineKeyboardMarkup(keyboard)
+
+def get_personal_account_keyboard():
+    """Клавиатура личного кабинета с перенесёнными кнопками"""
+    keyboard = [
+        [InlineKeyboardButton("📋 Мои счета", callback_data="my_invoices")],
+        [InlineKeyboardButton("📦 Мои покупки", callback_data="my_purchases")],
+        [InlineKeyboardButton("🎟️ Промокод", callback_data="promo_code")],
+        [InlineKeyboardButton("💳 Пополнить баланс", callback_data="deposit_menu")],
+        [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_admin_keyboard():
@@ -728,11 +633,9 @@ def get_admin_keyboard():
 
 def get_catalog_categories_keyboard():
     categories = get_categories()
-    
     keyboard = []
     for category in categories:
         subcategories = get_subcategories(category)
-        
         if subcategories:
             keyboard.append([InlineKeyboardButton(f"📁 {category} ▶", callback_data=f"cat_{category}")])
         else:
@@ -741,73 +644,54 @@ def get_catalog_categories_keyboard():
                 keyboard.append([InlineKeyboardButton(f"📁 {category} ▶", callback_data=f"cat_{category}")])
             else:
                 keyboard.append([InlineKeyboardButton(f"📦 {category}", callback_data=f"category_{category}")])
-    
     keyboard.append([InlineKeyboardButton("📦 Все товары", callback_data="category_all")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_subcategories_keyboard(category: str):
     subcategories = get_subcategories(category)
-    
     keyboard = []
     for subcategory in subcategories:
         types = get_types(category, subcategory)
-        
         if types:
             keyboard.append([InlineKeyboardButton(f"📂 {subcategory} ▶", callback_data=f"subcat_{category}_{subcategory}")])
         else:
             keyboard.append([InlineKeyboardButton(f"📦 {subcategory}", callback_data=f"subcategory_{category}_{subcategory}")])
-    
     has_no_subcategory = any(
         p for p in get_available_products()
-        if p.get('category') == category and 
-        not p.get('subcategory')
+        if p.get('category') == category and not p.get('subcategory')
     )
-    
     if has_no_subcategory:
         keyboard.append([InlineKeyboardButton("📦 Без подкатегории", callback_data=f"category_{category}")])
-    
     category_types = get_types(category, None)
     if category_types:
         keyboard.append([InlineKeyboardButton("📝 Типы в категории", callback_data=f"category_types_{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 К категориям", callback_data="back_to_categories")])
     keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_types_keyboard(category: str, subcategory: str):
     types = get_types(category, subcategory)
-    
     keyboard = []
     for type_ in types:
         keyboard.append([InlineKeyboardButton(f"📝 {type_}", callback_data=f"type_{category}_{subcategory}_{type_}")])
-    
     has_no_type = any(
         p for p in get_available_products()
-        if p.get('category') == category and 
-        p.get('subcategory') == subcategory and 
-        not p.get('type')
+        if p.get('category') == category and p.get('subcategory') == subcategory and not p.get('type')
     )
-    
     if has_no_type:
         keyboard.append([InlineKeyboardButton("📦 Без типа", callback_data=f"subcategory_{category}_{subcategory}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 К подкатегориям", callback_data=f"cat_{category}")])
     keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_products_by_path_keyboard(category=None, subcategory=None, type_=None):
     filtered_products = get_products_by_path(category, subcategory, type_)
     available_products = [p for p in filtered_products if is_product_available(p)]
-    
     keyboard = []
     for product in available_products:
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
             btn_text = f"{emoji} {product['name']} - {product['price']} USDT/шт. ({available_files} доступно)"
@@ -815,17 +699,12 @@ def get_products_by_path_keyboard(category=None, subcategory=None, type_=None):
             btn_text = f"{emoji} {product['name']} - {product['price']} USDT"
         else:
             btn_text = f"{emoji} {product['name']} - {product['price']} USDT ({quantity} шт.)"
-        
         if product.get('has_file') and product.get('file_path'):
             btn_text += " 📎"
-        
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"product:{product['id']}")])
-    
     if not keyboard:
         keyboard.append([InlineKeyboardButton("📭 Нет доступных товаров", callback_data="no_products")])
-    
     back_buttons = []
-    
     if type_:
         if subcategory:
             back_buttons.append(InlineKeyboardButton("🔙 К типам", callback_data=f"subcat_{category}_{subcategory}"))
@@ -837,14 +716,11 @@ def get_products_by_path_keyboard(category=None, subcategory=None, type_=None):
         back_buttons.append(InlineKeyboardButton("🔙 К категориям", callback_data="back_to_categories"))
     else:
         back_buttons.append(InlineKeyboardButton("🔙 К категориям", callback_data="back_to_categories"))
-    
     back_buttons.append(InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu"))
-    
     if len(back_buttons) > 1:
         keyboard.append([back_buttons[0], back_buttons[1]])
     else:
         keyboard.append(back_buttons)
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_payment_methods_keyboard():
@@ -873,22 +749,17 @@ def get_back_to_menu_keyboard():
 
 def get_quantity_selection_keyboard(product_id: str, max_quantity: int):
     keyboard = []
-    
     quick_choices = [1, 2, 3, 5, 10]
     row = []
     for qty in quick_choices:
         if qty <= max_quantity:
             row.append(InlineKeyboardButton(str(qty), callback_data=f"buy_qty:{product_id}:{qty}"))
-    
     if row:
         keyboard.append(row)
-    
     if max_quantity > 10:
         keyboard.append([InlineKeyboardButton("🔢 Ввести своё количество", callback_data=f"custom_qty:{product_id}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"product_back:{product_id}")])
     keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_insufficient_balance_keyboard():
@@ -906,7 +777,6 @@ def get_admin_management_keyboard():
     ])
 
 def get_category_management_keyboard():
-    """Клавиатура для управления категориями с кнопкой возврата в админку"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Создать новую категорию", callback_data="admin_add_category")],
         [InlineKeyboardButton("📂 Создать подкатегорию в категорию", callback_data="admin_add_subcategory")],
@@ -920,7 +790,6 @@ def get_category_management_keyboard():
     ])
 
 def get_confirm_delete_category_keyboard(category: str):
-    """Клавиатура для подтверждения удаления категории"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Да, удалить категорию", callback_data=f"final_delete_category:{category}"),
@@ -930,7 +799,6 @@ def get_confirm_delete_category_keyboard(category: str):
     ])
 
 def get_confirm_delete_subcategory_keyboard(category: str, subcategory: str):
-    """Клавиатура для подтверждения удаления подкатегории"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Да, удалить подкатегорию", callback_data=f"final_delete_subcategory:{category}:{subcategory}"),
@@ -940,15 +808,12 @@ def get_confirm_delete_subcategory_keyboard(category: str, subcategory: str):
     ])
 
 def get_back_to_categories_keyboard():
-    """Клавиатура для возврата к управлению категориями"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 К управлению категориями", callback_data="admin_manage_categories")]
     ])
 
 def get_my_purchases_keyboard(page: int = 0, total_pages: int = 1, purchase_id: str = None):
-    """Клавиатура для раздела 'Мои покупки'"""
     keyboard = []
-    
     if purchase_id:
         keyboard.append([InlineKeyboardButton("📥 Скачать файл", callback_data=f"download_purchase:{purchase_id}")])
         keyboard.append([InlineKeyboardButton("🔙 К моим покупкам", callback_data="my_purchases")])
@@ -957,29 +822,21 @@ def get_my_purchases_keyboard(page: int = 0, total_pages: int = 1, purchase_id: 
             nav_buttons = []
             if page > 0:
                 nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"purchases_page:{page-1}"))
-            
             nav_buttons.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-            
             if page < total_pages - 1:
                 nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"purchases_page:{page+1}"))
-            
             keyboard.append(nav_buttons)
-        
         keyboard.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     return InlineKeyboardMarkup(keyboard)
 
 def get_purchase_detail_keyboard(purchase_id: str):
-    """Клавиатура для детального просмотра покупки"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📥 Скачать файл", callback_data=f"download_purchase:{purchase_id}")],
         [InlineKeyboardButton("🔙 К моим покупкам", callback_data="my_purchases")]
     ])
 
-# ========== НОВЫЕ КЛАВИАТУРЫ ДЛЯ ПРОМОКОДОВ ==========
-
+# ========== КЛАВИАТУРЫ ДЛЯ ПРОМОКОДОВ ==========
 def get_admin_promocodes_keyboard():
-    """Клавиатура для управления промокодами"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Создать денежный промокод", callback_data="admin_create_balance_promo")],
         [InlineKeyboardButton("➕ Создать товарный промокод", callback_data="admin_create_item_promo")],
@@ -988,15 +845,12 @@ def get_admin_promocodes_keyboard():
     ])
 
 def get_promocode_cancel_keyboard():
-    """Клавиатура для отмены ввода промокода"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Отмена", callback_data="back_to_menu")]
     ])
 
-# ========== НОВЫЕ КЛАВИАТУРЫ ДЛЯ ЗАЯВОК ==========
-
+# ========== КЛАВИАТУРЫ ДЛЯ ЗАЯВОК ==========
 def get_admin_requests_keyboard():
-    """Клавиатура для списка заявок"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Обновить", callback_data="admin_requests_list")],
         [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
@@ -1008,7 +862,6 @@ def get_back_to_requests_keyboard():
     ])
 
 def get_confirm_request_keyboard(request_id: str):
-    """Клавиатура для подтверждения/отклонения заявки"""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm_request:{request_id}"),
@@ -1018,7 +871,6 @@ def get_confirm_request_keyboard(request_id: str):
     ])
 
 # ========== КОМАНДЫ ПОЛЬЗОВАТЕЛЯ ==========
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     states_to_clear = [
         'awaiting_usdt_amount', 'awaiting_product_data', 'awaiting_file_for_product',
@@ -1031,31 +883,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for key in states_to_clear:
         if key in context.user_data:
             del context.user_data[key]
-    
+
     user = update.effective_user
     user_id = user.id
-    
-    update_user_info(
-        user_id=user_id,
-        username=user.username,
-        first_name=user.first_name
-    )
-    
+    update_user_info(user_id=user_id, username=user.username, first_name=user.first_name)
     user_data = ensure_user_registered(user_id)
-    
-    update_user_info(
-        user_id=user_id,
-        username=user.username,
-        first_name=user.first_name
-    )
-    
+
     available_products = get_available_products()
     file_products = [p for p in available_products if p.get('has_file')]
     regular_products = [p for p in available_products if not p.get('has_file')]
     bundle_products = [p for p in available_products if p.get('is_bundle', False)]
-    
+
     safe_first_name = user_data.get('first_name', 'Пользователь').replace("_", "-")
-    
     welcome_text = (
         f"👋 **Привет, {safe_first_name}!**\n\n"
         f"💰 **Ваш баланс:** {user_data.get('balance_usdt', 0.0):.2f} USDT\n"
@@ -1071,10 +910,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• После создания заявки свяжитесь с администратором для оплаты\n\n"
         "🎯 **Выберите действие:**"
     )
-    
     if is_admin(user_id):
         welcome_text += f"\n👑 **Вы администратор!**"
-    
+
     if update.message:
         await update.message.reply_text(
             welcome_text,
@@ -1092,10 +930,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     available_products = get_available_products()
-    
     if not available_products:
         response_text = "🛒 **Каталог пуст**\n\nАдминистратор скоро добавит товары."
-        
         if update.message:
             await update.message.reply_text(
                 response_text,
@@ -1111,25 +947,21 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_back_to_menu_keyboard()
             )
         return
-    
+
     categories = get_categories()
-    
     categories_text = "📂 **Выберите категорию товаров:**\n\n"
-    
     for i, category in enumerate(categories, 1):
         category_products = [p for p in available_products if p.get('category') == category]
         bundle_count = len([p for p in category_products if p.get('is_bundle', False)])
         file_count = len([p for p in category_products if p.get('has_file') and not p.get('is_bundle', False)])
         regular_count = len([p for p in category_products if not p.get('has_file')])
-        
         categories_text += f"{i}. **{category}**\n"
         categories_text += f"   📦 Товаров: {len(category_products)}\n"
         categories_text += f"   📦 Наборов: {bundle_count}\n"
         categories_text += f"   📁 Файловых: {file_count}\n"
         categories_text += f"   🛍️ Обычных: {regular_count}\n\n"
-    
     categories_text += "🛒 **Выберите категорию:**"
-    
+
     if update.message:
         await update.message.reply_text(
             categories_text,
@@ -1153,14 +985,12 @@ async def catalog_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category_name: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     if category_name == "all":
         filtered_products = get_available_products()
         category_title = "Все товары"
     else:
         filtered_products = [p for p in get_available_products() if p.get('category') == category_name]
         category_title = category_name
-    
     if not filtered_products:
         await safe_edit_message_text(
             query=query,
@@ -1169,16 +999,12 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
             reply_markup=get_catalog_categories_keyboard()
         )
         return
-    
     catalog_text = f"🛍️ **Каталог: {category_title}**\n\n"
-    
     for i, product in enumerate(filtered_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        
         catalog_text += f"{i}. {emoji} **{product['name']}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
-        
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
             catalog_text += f" за штуку\n"
@@ -1186,15 +1012,11 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
         else:
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
-        
         if product.get('description'):
             desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
             catalog_text += f"   📝 {desc}\n"
-        
         catalog_text += "\n"
-    
     catalog_text += "🛒 **Выберите товар для покупки:**"
-    
     await safe_edit_message_text(
         query=query,
         text=catalog_text,
@@ -1205,39 +1027,28 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
 async def category_types_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     types = get_types(category, None)
-    
     if not types:
         await safe_edit_message_text(
             query=query,
-            text=f"📭 **В категории '{category}' нет типов.**\n\n"
-                 f"Переходим к товарам без типа...",
+            text=f"📭 **В категории '{category}' нет типов.**\n\nПереходим к товарам без типа...",
             parse_mode='Markdown',
             reply_markup=get_subcategories_keyboard(category)
         )
         return
-    
     catalog_text = f"📁 **Категория: {category}**\n\n"
     catalog_text += "📝 **Выберите тип товаров:**\n\n"
-    
     types_with_counts = []
     for type_ in types:
         count = len([
             p for p in get_available_products()
-            if p.get('category') == category and 
-            p.get('type') == type_ and
-            not p.get('subcategory')
+            if p.get('category') == category and p.get('type') == type_ and not p.get('subcategory')
         ])
         types_with_counts.append((type_, count))
-    
     types_with_counts.sort(key=lambda x: x[1], reverse=True)
-    
     for i, (type_, count) in enumerate(types_with_counts, 1):
         catalog_text += f"{i}. **{type_}** - {count} товар(ов)\n"
-    
     catalog_text += "\n📦 **Без типа** - для просмотра товаров без типа"
-    
     await safe_edit_message_text(
         query=query,
         text=catalog_text,
@@ -1248,9 +1059,7 @@ async def category_types_handler(update: Update, context: ContextTypes.DEFAULT_T
 async def subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     subcategories = get_subcategories(category)
-    
     if not subcategories:
         category_types = get_types(category, None)
         if category_types:
@@ -1258,30 +1067,22 @@ async def subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await catalog_category_handler(update, context, category)
         return
-    
     catalog_text = f"📂 **Категория: {category}**\n\n"
     catalog_text += "📁 **Выберите подкатегорию:**\n\n"
-    
     subcategories_with_counts = []
     for subcat in subcategories:
         count = len([
             p for p in get_available_products()
-            if p.get('category') == category and 
-            p.get('subcategory') == subcat
+            if p.get('category') == category and p.get('subcategory') == subcat
         ])
         subcategories_with_counts.append((subcat, count))
-    
     subcategories_with_counts.sort(key=lambda x: x[1], reverse=True)
-    
     for i, (subcat, count) in enumerate(subcategories_with_counts, 1):
         catalog_text += f"{i}. **{subcat}** - {count} товар(ов)\n"
-    
     catalog_text += "\n📦 **Без подкатегории** - для просмотра товаров без подкатегории"
-    
     category_types = get_types(category, None)
     if category_types:
         catalog_text += "\n\n📝 **Типы в категории** - для просмотра типов без подкатегории"
-    
     await safe_edit_message_text(
         query=query,
         text=catalog_text,
@@ -1292,13 +1093,10 @@ async def subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     types = get_types(category, subcategory)
-    
     if not types:
         filtered_products = get_products_by_path(category, subcategory)
         available_products = [p for p in filtered_products if is_product_available(p)]
-        
         if not available_products:
             await safe_edit_message_text(
                 query=query,
@@ -1307,17 +1105,13 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
                 reply_markup=get_subcategories_keyboard(category)
             )
             return
-        
         catalog_text = f"🛍️ **Категория: {category}**\n"
         catalog_text += f"📂 **Подкатегория: {subcategory}**\n\n"
-        
         for i, product in enumerate(available_products, 1):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 1)
-            
             catalog_text += f"{i}. {emoji} **{product['name']}**\n"
             catalog_text += f"   💰 **Цена:** {product['price']} USDT"
-            
             if product.get('is_bundle', False):
                 available_files = get_available_files_count(product.get('bundle_files', []))
                 catalog_text += f" за штуку\n"
@@ -1325,15 +1119,11 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
             else:
                 catalog_text += f"\n"
                 catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
-            
             if product.get('description'):
                 desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
                 catalog_text += f"   📝 {desc}\n"
-            
             catalog_text += "\n"
-        
         catalog_text += "🛒 **Выберите товар для покупки:**"
-        
         await safe_edit_message_text(
             query=query,
             text=catalog_text,
@@ -1344,24 +1134,17 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
         catalog_text = f"📂 **Категория: {category}**\n"
         catalog_text += f"📁 **Подкатегория: {subcategory}**\n\n"
         catalog_text += "📝 **Выберите тип товаров:**\n\n"
-        
         types_with_counts = []
         for type_ in types:
             count = len([
                 p for p in get_available_products()
-                if p.get('category') == category and 
-                p.get('subcategory') == subcategory and 
-                p.get('type') == type_
+                if p.get('category') == category and p.get('subcategory') == subcategory and p.get('type') == type_
             ])
             types_with_counts.append((type_, count))
-        
         types_with_counts.sort(key=lambda x: x[1], reverse=True)
-        
         for i, (type_, count) in enumerate(types_with_counts, 1):
             catalog_text += f"{i}. **{type_}** - {count} товар(ов)\n"
-        
         catalog_text += "\n📦 **Без типа** - для просмотра товаров без типа"
-        
         await safe_edit_message_text(
             query=query,
             text=catalog_text,
@@ -1372,10 +1155,8 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
 async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str, type_: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     filtered_products = get_products_by_path(category, subcategory, type_)
     available_products = [p for p in filtered_products if is_product_available(p)]
-    
     if not available_products:
         await safe_edit_message_text(
             query=query,
@@ -1384,18 +1165,14 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=get_types_keyboard(category, subcategory)
         )
         return
-    
     catalog_text = f"🛍️ **Категория: {category}**\n"
     catalog_text += f"📂 **Подкатегория:** {subcategory}\n"
     catalog_text += f"📝 **Тип: {type_}**\n\n"
-    
     for i, product in enumerate(available_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        
         catalog_text += f"{i}. {emoji} **{product['name']}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
-        
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
             catalog_text += f" за штуку\n"
@@ -1403,15 +1180,11 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
-        
         if product.get('description'):
             desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
             catalog_text += f"   📝 {desc}\n"
-        
         catalog_text += "\n"
-    
     catalog_text += "🛒 **Выберите товар для покупки:**"
-    
     await safe_edit_message_text(
         query=query,
         text=catalog_text,
@@ -1422,10 +1195,8 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def catalog_type_no_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, type_: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     filtered_products = get_products_by_path(category, None, type_)
     available_products = [p for p in filtered_products if is_product_available(p)]
-    
     if not available_products:
         await safe_edit_message_text(
             query=query,
@@ -1434,17 +1205,13 @@ async def catalog_type_no_subcategory_handler(update: Update, context: ContextTy
             reply_markup=get_category_types_keyboard(category)
         )
         return
-    
     catalog_text = f"🛍️ **Категория: {category}**\n"
     catalog_text += f"📝 **Тип: {type_}** (без подкатегории)\n\n"
-    
     for i, product in enumerate(available_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        
         catalog_text += f"{i}. {emoji} **{product['name']}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
-        
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
             catalog_text += f" за штуку\n"
@@ -1452,15 +1219,11 @@ async def catalog_type_no_subcategory_handler(update: Update, context: ContextTy
         else:
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
-        
         if product.get('description'):
             desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
             catalog_text += f"   📝 {desc}\n"
-        
         catalog_text += "\n"
-    
     catalog_text += "🛒 **Выберите товар для покупки:**"
-    
     await safe_edit_message_text(
         query=query,
         text=catalog_text,
@@ -1471,34 +1234,22 @@ async def catalog_type_no_subcategory_handler(update: Update, context: ContextTy
 async def personal_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user = query.from_user
     user_id = user.id
-    
-    update_user_info(
-        user_id=user_id,
-        username=user.username,
-        first_name=user.first_name
-    )
-    
+    update_user_info(user_id=user_id, username=user.username, first_name=user.first_name)
     user_data = ensure_user_registered(user_id)
     balance_usdt = user_data.get("balance_usdt", 0.0)
-    
     user_orders = [o for o in orders if str(o.get('user_id')) == str(user_id)]
     orders_count = len(user_orders)
-    
     user_invoices = [inv for inv in invoices.values() if str(inv.get('user_id')) == str(user_id)]
     active_invoices = len([inv for inv in user_invoices if inv.get('status') == 'active'])
     paid_invoices = len([inv for inv in user_invoices if inv.get('status') == 'paid'])
-    
     purchased_files = user_data.get('files_purchased', [])
-    
     user_purchases = get_user_purchases(user_id)
     purchases_count = len(user_purchases)
-    
     safe_username = user_data.get('username', 'не указан')
     safe_first_name = user_data.get('first_name', user.first_name)
-    
+
     response_text = (
         f"👤 **Личный кабинет**\n\n"
         f"🆔 **Ваш ID:** `{user_id}`\n"
@@ -1512,31 +1263,28 @@ async def personal_account_handler(update: Update, context: ContextTypes.DEFAULT
         f"   ⏳ Ожидает оплаты: {active_invoices}\n"
         f"   ✅ Оплачено: {paid_invoices}"
     )
-    
     if is_admin(user_id):
         response_text += f"\n\n👑 **Вы администратор!**"
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
         parse_mode='Markdown',
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_personal_account_keyboard()
     )
 
 async def available_products_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     available_products = get_available_products()
     file_products = [p for p in available_products if p.get('has_file')]
     regular_products = [p for p in available_products if not p.get('has_file')]
     bundle_products = [p for p in available_products if p.get('is_bundle', False)]
-    
+
     if not available_products:
         response_text = "📭 **Нет доступных товаров**\n\nВсе товары распроданы."
     else:
         available_products.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        
         response_text = (
             f"📊 **Статистика товаров:**\n\n"
             f"🛍️ **Всего доступно:** {len(available_products)} шт.\n"
@@ -1545,14 +1293,11 @@ async def available_products_handler(update: Update, context: ContextTypes.DEFAU
             f"📦 **Обычных товаров:** {len(regular_products)} шт.\n\n"
             f"🔥 **Самые свежие товары:**\n"
         )
-        
         for i, product in enumerate(available_products[:10], 1):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 1)
-            
             response_text += f"{i}. {emoji} **{product['name']}**\n"
             response_text += f"   💰 **Цена:** {product['price']} USDT"
-            
             if product.get('is_bundle', False):
                 available_files = get_available_files_count(product.get('bundle_files', []))
                 response_text += f" за штуку\n"
@@ -1560,16 +1305,12 @@ async def available_products_handler(update: Update, context: ContextTypes.DEFAU
             else:
                 response_text += f"\n"
                 response_text += f"   📦 **В наличии:** {quantity} шт.\n"
-            
             if product.get('description'):
                 desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
                 response_text += f"   📝 {desc}\n"
-            
             response_text += "\n"
-        
         if len(available_products) > 10:
             response_text += f"\n📈 *И еще {len(available_products) - 10} товаров...*\n"
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1580,7 +1321,6 @@ async def available_products_handler(update: Update, context: ContextTypes.DEFAU
 async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     response_text = (
         "🆘 **Поддержка**\n\n"
         "По всем вопросам:\n\n"
@@ -1591,7 +1331,6 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Укажите ваш ID\n"
         "3. Приложите скриншот"
     )
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1602,9 +1341,7 @@ async def support_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
-    
     response_text = f"🆔 **Ваш ID:** `{user_id}`"
-    
     await update.message.reply_text(
         response_text,
         parse_mode='Markdown',
@@ -1614,14 +1351,11 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def invoices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     user_invoices = [inv for inv in invoices.values() if str(inv.get('user_id')) == str(user_id)]
-    
+
     if not user_invoices:
         response_text = "📊 **У вас нет счетов**\n\n💳 **Чтобы создать счет, нажмите '💳 Пополнить USDT'**"
-        
         await safe_edit_message_text(
             query=query,
             text=response_text,
@@ -1632,41 +1366,34 @@ async def invoices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
         return
-    
+
     user_invoices.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-    
     active_invoices = [inv for inv in user_invoices if inv.get('status') == 'active']
     paid_invoices = [inv for inv in user_invoices if inv.get('status') == 'paid']
     expired_invoices = [inv for inv in user_invoices if inv.get('status') == 'expired']
-    
+
     response_text = "📊 **Ваши счета:**\n\n"
-    
     if active_invoices:
         response_text += f"⏳ **Активные счета ({len(active_invoices)}):**\n"
         for i, invoice in enumerate(active_invoices[:3], 1):
             invoice_id = str(invoice.get('invoice_id', 'N/A'))
             response_text += f"{i}. 💰 **{invoice.get('amount', 0)} USDT** - ID: `{invoice_id}`\n\n"
-    
     if paid_invoices:
         response_text += f"✅ **Оплаченные счета ({len(paid_invoices)}):**\n"
         for i, invoice in enumerate(paid_invoices[:3], 1):
             response_text += f"{i}. 💰 **{invoice.get('amount', 0)} USDT** - {invoice.get('paid_at', 'N/A')[:19]}\n"
-    
     if expired_invoices:
         response_text += f"\n❌ **Истекшие счета ({len(expired_invoices)}):**\n"
         for i, invoice in enumerate(expired_invoices[:2], 1):
             response_text += f"{i}. 💰 **{invoice.get('amount', 0)} USDT**\n"
-    
+
     keyboard_buttons = []
-    
     if active_invoices:
         keyboard_buttons.append([InlineKeyboardButton("❌ Отменить активные счета", callback_data="cancel_invoices")])
-    
     keyboard_buttons.append([InlineKeyboardButton("💳 Новый счет", callback_data="deposit_menu")])
     keyboard_buttons.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     keyboard = InlineKeyboardMarkup(keyboard_buttons)
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1675,20 +1402,14 @@ async def invoices_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ========== МОИ ПОКУПКИ ==========
-
 async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     user_purchases = get_user_purchases(user_id)
-    
+
     if not user_purchases:
-        response_text = "🛍️ **У вас еще нет покупок**\n\n"
-        response_text += "После покупки товаров они будут отображаться здесь.\n"
-        response_text += "Нажмите '🛍️ Каталог' чтобы начать покупки!"
-        
+        response_text = "🛍️ **У вас еще нет покупок**\n\nПосле покупки товаров они будут отображаться здесь.\nНажмите '🛍️ Каталог' чтобы начать покупки!"
         await safe_edit_message_text(
             query=query,
             text=response_text,
@@ -1699,29 +1420,26 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             ])
         )
         return
-    
+
     items_per_page = 5
     total_pages = (len(user_purchases) + items_per_page - 1) // items_per_page
-    
     if page >= total_pages:
         page = total_pages - 1
     if page < 0:
         page = 0
-    
+
     start_idx = page * items_per_page
     end_idx = start_idx + items_per_page
     page_purchases = user_purchases[start_idx:end_idx]
-    
+
     response_text = f"🛍️ **Мои покупки** (Страница {page + 1}/{total_pages})\n\n"
     response_text += f"📊 **Всего покупок:** {len(user_purchases)}\n\n"
-    
     keyboard_buttons = []
-    
+
     for i, purchase in enumerate(page_purchases, start_idx + 1):
         purchase_id = purchase.get("purchase_id", "N/A")[:8]
         product_name = purchase.get("product_name", "Неизвестный товар")
         purchase_date = purchase.get("purchased_at", "")
-        
         try:
             if purchase_date:
                 date_obj = datetime.fromisoformat(purchase_date)
@@ -1730,7 +1448,7 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 formatted_date = "Неизвестно"
         except:
             formatted_date = "Неизвестно"
-        
+
         if purchase.get("is_bundle", False):
             emoji = "📦"
             item_text = f"{len(purchase.get('bundle_files', []))} файлов"
@@ -1740,36 +1458,32 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             emoji = "🛍️"
             item_text = "Товар"
-        
+
         response_text += f"{i}. {emoji} **{product_name}**\n"
         response_text += f"   📅 **Дата:** {formatted_date}\n"
         response_text += f"   🆔 **ID:** `{purchase_id}`\n"
         response_text += f"   📦 **Тип:** {item_text}\n\n"
-        
+
         keyboard_buttons.append([InlineKeyboardButton(
-            f"{emoji} {product_name} ({formatted_date})", 
+            f"{emoji} {product_name} ({formatted_date})",
             callback_data=f"show_purchase:{purchase.get('purchase_id')}"
         )])
-    
+
     if total_pages > 1:
         response_text += f"📄 **Используйте кнопки ниже для навигации**\n"
-    
+
     if total_pages > 1:
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"purchases_page:{page-1}"))
-        
         nav_buttons.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
-        
         if page < total_pages - 1:
             nav_buttons.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"purchases_page:{page+1}"))
-        
         keyboard_buttons.append(nav_buttons)
-    
+
     keyboard_buttons.append([InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")])
-    
     keyboard = InlineKeyboardMarkup(keyboard_buttons)
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1780,28 +1494,25 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, purchase_id: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     purchase = get_user_purchase_by_id(user_id, purchase_id)
-    
+
     if not purchase:
         await safe_edit_message_text(
             query=query,
-            text="❌ **Покупка не найдена**\n\n"
-                "Эта покупка не существует или была удалена.",
+            text="❌ **Покупка не найдена**\n\nЭта покупка не существует или была удалена.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 К моим покупкам", callback_data="my_purchases")]
             ])
         )
         return
-    
+
     product_name = purchase.get("product_name", "Неизвестный товар")
     purchase_date = purchase.get("purchased_at", "")
     price = purchase.get("price", 0)
     quantity = purchase.get("quantity", 1)
-    
+
     try:
         if purchase_date:
             date_obj = datetime.fromisoformat(purchase_date)
@@ -1810,7 +1521,7 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
             formatted_date = "Неизвестно"
     except:
         formatted_date = "Неизвестно"
-    
+
     response_text = f"🛍️ **Детали покупки**\n\n"
     response_text += f"📦 **Товар:** {product_name}\n"
     response_text += f"💰 **Цена:** {price} USDT\n"
@@ -1818,7 +1529,7 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
     response_text += f"💵 **Общая стоимость:** {price * quantity} USDT\n"
     response_text += f"📅 **Дата покупки:** {formatted_date}\n"
     response_text += f"🆔 **ID покупки:** `{purchase_id}`\n\n"
-    
+
     if purchase.get("is_bundle", False):
         bundle_files = purchase.get("bundle_files", [])
         response_text += f"📦 **Набор файлов:** {len(bundle_files)} файлов\n"
@@ -1826,13 +1537,12 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         for i, file_info in enumerate(bundle_files, 1):
             file_name = file_info.get("name", f"Файл {i}")
             response_text += f"   {i}. {file_name}\n"
-    
     elif purchase.get("has_file", False):
         file_name = purchase.get("file_name", "Файл")
         response_text += f"📁 **Файл:** {file_name}\n"
-    
+
     response_text += "\nНажмите '📥 Скачать файл' чтобы получить файл."
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1843,61 +1553,50 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
 async def download_purchase_file(update: Update, context: ContextTypes.DEFAULT_TYPE, purchase_id: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     purchase = get_user_purchase_by_id(user_id, purchase_id)
-    
+
     if not purchase:
         await safe_answer_query(query, "❌ Покупка не найдена", show_alert=True)
         return
-    
+
     try:
         if purchase.get("is_bundle", False):
             bundle_files = purchase.get("bundle_files", [])
-            
             if not bundle_files:
                 await safe_answer_query(query, "❌ В наборе нет файлов", show_alert=True)
                 return
-            
+
             for i, file_info in enumerate(bundle_files, 1):
                 file_path = file_info.get("path")
                 file_name = file_info.get("name", f"Файл_{i}.txt")
-                
                 if not file_path or not os.path.exists(file_path):
                     logger.warning(f"Файл не найден: {file_path}")
                     continue
-                
                 try:
                     with open(file_path, 'rb') as f:
                         caption = f"📦 Файл {i}/{len(bundle_files)} из покупки: {purchase.get('product_name', 'Набор')}"
-                        
                         await context.bot.send_document(
                             chat_id=user_id,
                             document=f,
                             caption=caption,
                             filename=file_name
                         )
-                        
                         await asyncio.sleep(0.5)
-                        
                 except Exception as e:
                     logger.error(f"Ошибка отправки файла {file_name}: {e}")
                     await context.bot.send_message(
                         chat_id=user_id,
                         text=f"❌ Ошибка отправки файла {file_name}: {str(e)[:100]}"
                     )
-            
             await safe_answer_query(query, f"✅ Отправлено {len(bundle_files)} файлов!", show_alert=True)
-        
+
         elif purchase.get("has_file", False) and not purchase.get("is_bundle", False):
             file_path = purchase.get("file_path")
             file_name = purchase.get("file_name", "Файл.txt")
-            
             if not file_path or not os.path.exists(file_path):
                 await safe_answer_query(query, "❌ Файл не найден", show_alert=True)
                 return
-            
             with open(file_path, 'rb') as f:
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -1905,30 +1604,24 @@ async def download_purchase_file(update: Update, context: ContextTypes.DEFAULT_T
                     caption=f"📦 Файл из покупки: {purchase.get('product_name', 'Товар')}",
                     filename=file_name
                 )
-            
             await safe_answer_query(query, "✅ Файл отправлен!", show_alert=True)
-        
         else:
             await safe_answer_query(query, "❌ У этого товара нет файлов для скачивания", show_alert=True)
-        
+
         await show_purchase_detail(update, context, purchase_id)
-        
     except Exception as e:
         logger.error(f"Ошибка отправки файлов покупки: {e}")
         await safe_answer_query(query, f"❌ Ошибка отправки файлов: {str(e)[:100]}", show_alert=True)
 
 # ========== ОПЛАТА ==========
-
 async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     if 'awaiting_usdt_amount' in context.user_data:
         del context.user_data['awaiting_usdt_amount']
-    
     user_id = query.from_user.id
     ensure_user_registered(user_id)
-    
+
     response_text = (
         "💳 **Выберите способ пополнения баланса:**\n\n"
         "💎 **Криптовалюта через CryptoBot:**\n"
@@ -1939,7 +1632,6 @@ async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Требует подтверждения\n"
         "• Курс: 80 руб = 1 USDT"
     )
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -1948,17 +1640,14 @@ async def deposit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def deposit_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Это старая кнопка, теперь используем deposit_admin_start
     await deposit_admin_start_handler(update, context)
 
 async def deposit_admin_start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало процесса пополнения через администратора (ввод суммы в рублях)"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
     ensure_user_registered(user_id)
-    
+
     await safe_edit_message_text(
         query=query,
         text="💳 **Пополнение через администратора**\n\n"
@@ -1975,16 +1664,11 @@ async def deposit_admin_start_handler(update: Update, context: ContextTypes.DEFA
     context.user_data['awaiting_rub_amount'] = True
 
 async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE, rub_amount: float):
-    """Создаёт заявку на пополнение и уведомляет администраторов"""
     user_id = update.effective_user.id
     user_data = ensure_user_registered(user_id)
-    
-    # Конвертация в USDT
     usdt_amount = rub_amount / RUB_TO_USDT_RATE
-    
-    # Генерируем ID заявки
     request_id = str(uuid.uuid4())[:8]
-    
+
     request_data = {
         "request_id": request_id,
         "user_id": user_id,
@@ -1992,16 +1676,14 @@ async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE,
         "first_name": user_data.get('first_name', 'User'),
         "rub_amount": rub_amount,
         "usdt_amount": usdt_amount,
-        "status": "pending",  # pending, approved, rejected
+        "status": "pending",
         "created_at": datetime.now().isoformat(),
         "processed_at": None,
         "processed_by": None
     }
-    
     requests_dict[request_id] = request_data
     save_requests()
-    
-    # Уведомление пользователю
+
     await update.message.reply_text(
         f"✅ **Заявка на пополнение создана!**\n\n"
         f"🆔 **Номер заявки:** `{request_id}`\n"
@@ -2013,8 +1695,7 @@ async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE,
         parse_mode='Markdown',
         reply_markup=get_main_inline_keyboard(user_id)
     )
-    
-    # Уведомление всем администраторам
+
     for admin_id in admins:
         try:
             await context.bot.send_message(
@@ -2033,17 +1714,16 @@ async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE,
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
-    
+
     if 'awaiting_rub_amount' in context.user_data:
         del context.user_data['awaiting_rub_amount']
 
 async def deposit_crypto_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
     ensure_user_registered(user_id)
-    
+
     response_text = (
         "💎 **Пополнение баланса USDT**\n\n"
         "💳 **Пополнение через CryptoBot:**\n"
@@ -2055,7 +1735,6 @@ async def deposit_crypto_handler(update: Update, context: ContextTypes.DEFAULT_T
         "Максимум: 1000 USDT\n\n"
         "Или нажмите '🔙 Назад' для отмены"
     )
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -2075,17 +1754,12 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
             user_id = update.effective_user.id
             chat_id = update.effective_chat.id
             is_callback = False
-        
+
         description = f"Пополнение баланса {amount} USDT для пользователя {user_id}"
-        
-        invoice_data = await crypto_bot.create_invoice(
-            amount=amount,
-            description=description
-        )
-        
+        invoice_data = await crypto_bot.create_invoice(amount=amount, description=description)
+
         if not invoice_data:
             error_msg = "❌ **Ошибка создания счета!**\n\nПожалуйста, попробуйте позже."
-            
             if is_callback:
                 await safe_edit_message_text(
                     query=query,
@@ -2107,12 +1781,12 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
                     ])
                 )
             return
-        
+
         invoice_id = invoice_data['invoice_id']
         pay_url = invoice_data['pay_url']
         created_at = datetime.now().isoformat()
         expires_at = (datetime.now() + timedelta(hours=1)).isoformat()
-        
+
         invoices[str(invoice_id)] = {
             "invoice_id": invoice_id,
             "user_id": user_id,
@@ -2125,11 +1799,10 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
             "description": description
         }
         save_invoices()
-        
+
         user_data = ensure_user_registered(user_id)
         if "crypto_invoices" not in user_data:
             user_data["crypto_invoices"] = []
-        
         user_data["crypto_invoices"].append({
             "invoice_id": invoice_id,
             "amount": amount,
@@ -2139,7 +1812,7 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
             "expires_at": expires_at
         })
         save_users()
-        
+
         response_text = (
             f"✅ **Счет на сумму {amount} USDT создан!**\n\n"
             f"💳 **Для оплаты перейдите по ссылке:**\n"
@@ -2150,14 +1823,14 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"• Статус: `ожидает оплаты`\n"
             f"• Срок действия: 1 час"
         )
-        
+
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 Оплатить", url=pay_url)],
             [InlineKeyboardButton("❌ Отменить счет", callback_data=f"cancel_invoice:{invoice_id}")],
             [InlineKeyboardButton("📋 Мои счета", callback_data="my_invoices")],
             [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
         ])
-        
+
         if is_callback:
             await safe_edit_message_text(
                 query=query,
@@ -2174,13 +1847,11 @@ async def create_usdt_invoice(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=keyboard,
                 disable_web_page_preview=True
             )
-        
+
         asyncio.create_task(check_invoice_periodically(invoice_id, context))
-        
     except Exception as e:
         logger.error(f"Ошибка при создании счета: {e}")
         error_msg = f"❌ **Ошибка:** {str(e)}"
-        
         if hasattr(update, 'callback_query') and update.callback_query:
             await safe_edit_message_text(
                 query=update.callback_query,
@@ -2199,16 +1870,12 @@ async def check_invoice_periodically(invoice_id: str, context: ContextTypes.DEFA
     try:
         max_checks = 360
         check_interval = 10
-        
         for i in range(max_checks):
             await asyncio.sleep(check_interval)
-            
             if str(invoice_id) not in invoices:
                 return
-                
             invoice = invoices[str(invoice_id)]
             expires_at_str = invoice.get('expires_at')
-            
             if expires_at_str:
                 try:
                     expires_at = datetime.fromisoformat(expires_at_str)
@@ -2217,22 +1884,17 @@ async def check_invoice_periodically(invoice_id: str, context: ContextTypes.DEFA
                         return
                 except ValueError:
                     pass
-            
             status_data = await crypto_bot.check_invoice_status(invoice_id)
-            
             if status_data:
                 status = status_data.get("status")
-                
                 if status == "paid":
                     await process_paid_invoice(invoice_id, status_data, context)
                     return
                 elif status == "expired":
                     await process_expired_invoice(invoice_id, context)
                     return
-        
         if str(invoice_id) in invoices and invoices[str(invoice_id)]["status"] == "active":
             await process_expired_invoice(invoice_id, context)
-            
     except Exception as e:
         logger.error(f"Ошибка при проверке счета {invoice_id}: {e}")
 
@@ -2240,28 +1902,26 @@ async def process_paid_invoice(invoice_id: str, status_data: dict, context: Cont
     try:
         if str(invoice_id) not in invoices:
             return
-        
         invoice = invoices[str(invoice_id)]
         user_id = invoice["user_id"]
         amount = invoice["amount"]
-        
+
         invoice["status"] = "paid"
         invoice["paid_at"] = datetime.now().isoformat()
         invoice["crypto_data"] = status_data
         save_invoices()
-        
+
         user_data = ensure_user_registered(user_id)
         user_data["balance_usdt"] = user_data.get("balance_usdt", 0.0) + amount
-        
+
         if "crypto_invoices" in user_data:
             for inv in user_data["crypto_invoices"]:
                 if inv.get("invoice_id") == invoice_id:
                     inv["status"] = "paid"
                     inv["paid_at"] = datetime.now().isoformat()
                     break
-        
         save_users()
-        
+
         try:
             await context.bot.send_message(
                 chat_id=user_id,
@@ -2276,9 +1936,8 @@ async def process_paid_invoice(invoice_id: str, status_data: dict, context: Cont
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
-        
+
         logger.info(f"Счет {invoice_id} оплачен. Пользователю {user_id} зачислено {amount} USDT")
-        
     except Exception as e:
         logger.error(f"Ошибка обработки оплаченного счета {invoice_id}: {e}")
 
@@ -2287,11 +1946,11 @@ async def process_expired_invoice(invoice_id: str, context: ContextTypes.DEFAULT
         if str(invoice_id) in invoices:
             invoice = invoices[str(invoice_id)]
             user_id = invoice["user_id"]
-            
+
             invoice["status"] = "expired"
             invoice["expired_at"] = datetime.now().isoformat()
             save_invoices()
-            
+
             user_data = ensure_user_registered(user_id)
             if "crypto_invoices" in user_data:
                 for inv in user_data["crypto_invoices"]:
@@ -2300,7 +1959,7 @@ async def process_expired_invoice(invoice_id: str, context: ContextTypes.DEFAULT
                         inv["expired_at"] = datetime.now().isoformat()
                         break
                 save_users()
-            
+
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -2315,43 +1974,34 @@ async def process_expired_invoice(invoice_id: str, context: ContextTypes.DEFAULT
                 )
             except Exception as e:
                 logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
-                
     except Exception as e:
         logger.error(f"Ошибка обработки истекшего счета {invoice_id}: {e}")
 
 # ========== ОТМЕНА СЧЕТОВ ==========
-
 async def cancel_invoice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, invoice_id: str):
     query = update.callback_query
-    
     try:
         await query.answer()
     except BadRequest:
         pass
-    
     user_id = query.from_user.id
-    
     invoice_id_str = str(invoice_id)
-    
+
     if invoice_id_str not in invoices:
         await safe_answer_query(query, "❌ Счет не найден", show_alert=True)
         return
-    
     invoice = invoices[invoice_id_str]
-    
     if str(invoice.get('user_id')) != str(user_id):
         await safe_answer_query(query, "❌ Этот счет вам не принадлежит", show_alert=True)
         return
-    
     if invoice.get('status') != 'active':
         await safe_answer_query(query, f"❌ Нельзя отменить счет со статусом: {invoice.get('status')}", show_alert=True)
         return
-    
+
     invoice["status"] = "cancelled"
     invoice["cancelled_at"] = datetime.now().isoformat()
-    
     save_invoices()
-    
+
     user_data = ensure_user_registered(user_id)
     if "crypto_invoices" in user_data:
         for inv in user_data["crypto_invoices"]:
@@ -2360,14 +2010,13 @@ async def cancel_invoice_handler(update: Update, context: ContextTypes.DEFAULT_T
                 inv["cancelled_at"] = datetime.now().isoformat()
                 break
         save_users()
-    
+
     await safe_answer_query(query, "✅ Счет успешно отменен", show_alert=True)
-    
     load_data()
-    
+
     user_invoices = [inv for inv in invoices.values() if str(inv.get('user_id')) == str(user_id)]
     active_invoices = [inv for inv in user_invoices if inv.get('status') == 'active']
-    
+
     if active_invoices:
         await cancel_invoices_list_handler(update, context)
     else:
@@ -2385,19 +2034,15 @@ async def cancel_invoice_handler(update: Update, context: ContextTypes.DEFAULT_T
 async def cancel_invoices_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     load_data()
-    
     user_invoices = [inv for inv in invoices.values() if str(inv.get('user_id')) == str(user_id)]
     active_invoices = [inv for inv in user_invoices if inv.get('status') == 'active']
-    
+
     if not active_invoices:
         await safe_edit_message_text(
             query=query,
-            text="📭 **Нет активных счетов для отмены**\n\n"
-                "У вас нет активных счетов, которые можно отменить.",
+            text="📭 **Нет активных счетов для отмены**\n\nУ вас нет активных счетов, которые можно отменить.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💳 Новый счет", callback_data="deposit_menu")],
@@ -2406,50 +2051,44 @@ async def cancel_invoices_list_handler(update: Update, context: ContextTypes.DEF
             ])
         )
         return
-    
+
     response_text = "❌ **Отмена активных счетов**\n\n"
     response_text += f"У вас {len(active_invoices)} активных счетов:\n\n"
-    
     for i, invoice in enumerate(active_invoices, 1):
         invoice_id = str(invoice.get('invoice_id', 'N/A'))
         created_at = invoice.get('created_at', 'N/A')
-        
         try:
             expires_at = datetime.fromisoformat(invoice.get('expires_at', ''))
             time_left = expires_at - datetime.now()
             hours_left = time_left.total_seconds() // 3600
             minutes_left = (time_left.total_seconds() % 3600) // 60
-            
             if time_left.total_seconds() > 0:
                 time_left_str = f" (осталось: {int(hours_left)}ч {int(minutes_left)}м)"
             else:
                 time_left_str = " (истек)"
         except:
             time_left_str = ""
-        
         response_text += f"{i}. 💰 **{invoice.get('amount', 0)} USDT** - ID: `{invoice_id}`{time_left_str}\n"
         response_text += f"   📅 Создан: {created_at[:19]}\n\n"
-    
+
     response_text += "⚠️ **Внимание:**\n"
     response_text += "• Отмена счета не возвращает деньги\n"
     response_text += "• Счет просто удаляется из системы\n\n"
     response_text += "Выберите счет для отмены:"
-    
+
     keyboard_buttons = []
     for invoice in active_invoices:
         invoice_id = str(invoice.get('invoice_id'))
         amount = invoice.get('amount', 0)
         keyboard_buttons.append([
             InlineKeyboardButton(
-                f"❌ Отменить счет на {amount} USDT", 
+                f"❌ Отменить счет на {amount} USDT",
                 callback_data=f"cancel_invoice:{invoice_id}"
             )
         ])
-    
     keyboard_buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="my_invoices")])
-    
     keyboard = InlineKeyboardMarkup(keyboard_buttons)
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -2458,37 +2097,33 @@ async def cancel_invoices_list_handler(update: Update, context: ContextTypes.DEF
     )
 
 # ========== ПОКУПКА ТОВАРОВ ==========
-
 async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     selected_product = None
     for product in catalog:
         if product['id'] == product_id:
             selected_product = product
             break
-    
     if not selected_product:
         logger.error(f"Товар с ID {product_id} не найден")
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
         return
-    
+
     user_id = query.from_user.id
     user_data = ensure_user_registered(user_id)
-    
+
     if not is_product_available(selected_product):
         logger.warning(f"Товар {selected_product['id']} недоступен")
         await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
         return
-    
+
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
-    
     product_text = f"{emoji} **{selected_product['name']}**\n\n"
     product_text += f"💰 **Цена:** {selected_product['price']} USDT"
-    
+
     if selected_product.get('is_bundle', False):
         available_files = get_available_files_count(selected_product.get('bundle_files', []))
         product_text += f" за штуку\n"
@@ -2497,33 +2132,32 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         quantity = selected_product.get('quantity', 1)
         product_text += f"\n📦 **В наличии:** {quantity} шт.\n"
-    
+
     if selected_product.get('description'):
         product_text += f"\n📝 **Описание:**\n{selected_product['description']}\n"
-    
+
     user_balance = user_data.get('balance_usdt', 0.0)
     price_per_item = selected_product['price']
-    
+
     if price_per_item > 0:
         max_affordable = int(user_balance // price_per_item)
     else:
         max_affordable = 0
-    
+
     if selected_product.get('is_bundle', False):
         max_available = get_available_files_count(selected_product.get('bundle_files', []))
     else:
         max_available = selected_product.get('quantity', 1)
-    
+
     max_quantity = min(max_available, max_affordable)
-    
+
     product_text += f"\n👤 **Ваш баланс:** {user_balance:.2f} USDT"
-    
+
     if max_affordable == 0:
         product_text += f"\n\n⚠️ **Недостаточно средств!**\n"
         product_text += f"💰 **Необходимо:** {price_per_item} USDT за штуку\n"
         product_text += f"💳 **У вас:** {user_balance:.2f} USDT\n"
         product_text += f"📈 **Пополните баланс, чтобы купить этот товар.**"
-        
         await safe_edit_message_text(
             query=query,
             text=product_text,
@@ -2531,15 +2165,15 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=get_insufficient_balance_keyboard()
         )
         return
-    
+
     product_text += f"\n💡 **Можете купить до {max_quantity} шт.**"
-    
+
     if max_quantity <= 0:
         await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
         return
-    
+
     product_text += f"\n\n📊 **Выберите количество для покупки:**"
-    
+
     await safe_edit_message_text(
         query=query,
         text=product_text,
@@ -2550,47 +2184,43 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str, quantity: int):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     selected_product = None
     for product in catalog:
         if product['id'] == product_id:
             selected_product = product
             break
-    
     if not selected_product:
         logger.error(f"Товар с ID {product_id} не найден")
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
         return
-    
+
     user_id = query.from_user.id
     user_data = ensure_user_registered(user_id)
-    
+
     if not is_product_available(selected_product):
         logger.warning(f"Товар {selected_product['id']} недоступен")
         await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
         return
-    
+
     if selected_product.get('is_bundle', False):
         max_quantity = get_available_files_count(selected_product.get('bundle_files', []))
     else:
         max_quantity = selected_product.get('quantity', 1)
-    
+
     if quantity <= 0:
         await safe_answer_query(query, "❌ Количество должно быть больше 0", show_alert=True)
         return
-    
     if quantity > max_quantity:
         await safe_answer_query(query, f"❌ Максимальное доступное количество: {max_quantity}", show_alert=True)
         return
-    
+
     total_price = selected_product['price'] * quantity
     balance = user_data.get('balance_usdt', 0.0)
-    
+
     if balance < total_price:
         await safe_answer_query(query, f"❌ Недостаточно средств! Нужно: {total_price} USDT", show_alert=True)
-        
         insufficient_text = (
             f"💰 **Недостаточно средств для покупки!**\n\n"
             f"🛍️ **Товар:** {selected_product['name']}\n"
@@ -2601,7 +2231,6 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
             f"📉 **Недостает:** {total_price - balance:.2f} USDT\n\n"
             f"💳 **Пожалуйста, пополните баланс для завершения покупки.**"
         )
-        
         await safe_edit_message_text(
             query=query,
             text=insufficient_text,
@@ -2612,9 +2241,8 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
             ])
         )
         return
-    
+
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
-    
     confirm_text = f"✅ **Подтверждение покупки**\n\n"
     confirm_text += f"{emoji} **Товар:** {selected_product['name']}\n"
     confirm_text += f"💰 **Цена за штуку:** {selected_product['price']} USDT\n"
@@ -2623,7 +2251,7 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
     confirm_text += f"👤 **Ваш баланс:** {balance:.2f} USDT\n"
     confirm_text += f"💳 **Баланс после покупки:** {balance - total_price:.2f} USDT\n\n"
     confirm_text += "**Подтверждаете покупку?**"
-    
+
     await safe_edit_message_text(
         query=query,
         text=confirm_text,
@@ -2637,43 +2265,40 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
 async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str, quantity: int):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     selected_product = None
     for product in catalog:
         if product['id'] == product_id:
             selected_product = product
             break
-    
     if not selected_product:
         logger.error(f"Товар с ID {product_id} не найден")
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
         return
-    
+
     user_id = query.from_user.id
     user_data = ensure_user_registered(user_id)
-    
+
     if not is_product_available(selected_product):
         logger.warning(f"Товар {selected_product['id']} недоступен")
         await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
         return
-    
+
     if selected_product.get('is_bundle', False):
         max_quantity = get_available_files_count(selected_product.get('bundle_files', []))
     else:
         max_quantity = selected_product.get('quantity', 1)
-    
+
     if quantity <= 0 or quantity > max_quantity:
         await safe_answer_query(query, "❌ Некорректное количество", show_alert=True)
         return
-    
+
     total_price = selected_product['price'] * quantity
     balance = user_data.get('balance_usdt', 0.0)
-    
+
     if balance < total_price:
         await safe_answer_query(query, f"❌ Недостаточно средств! Нужно: {total_price} USDT, у вас: {balance:.2f} USDT", show_alert=True)
-        
         insufficient_text = (
             f"💰 **Недостаточно средств!**\n\n"
             f"🛍️ **Товар:** {selected_product['name']}\n"
@@ -2683,7 +2308,6 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             f"📉 **Недостает:** {total_price - balance:.2f} USDT\n\n"
             f"💳 **Пожалуйста, пополните баланс для завершения покупки.**"
         )
-        
         await safe_edit_message_text(
             query=query,
             text=insufficient_text,
@@ -2691,22 +2315,20 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             reply_markup=get_insufficient_balance_keyboard()
         )
         return
-    
+
     order_id = str(uuid.uuid4())[:8]
-    
+
     if selected_product.get('is_bundle', False) and selected_product.get('bundle_files'):
         try:
             bundle_files = selected_product.get('bundle_files', [])
             available_files = [f for f in bundle_files if not f.get('sold', False)]
-            
             if len(available_files) < quantity:
                 await safe_answer_query(query, f"❌ Недостаточно доступных файлов. Доступно: {len(available_files)}", show_alert=True)
                 return
-            
+
             files_to_sell = get_random_files_from_bundle(available_files, quantity)
-            
             mark_files_as_sold(bundle_files, files_to_sell)
-            
+
             purchase_data = {
                 "order_id": order_id,
                 "product_id": selected_product['id'],
@@ -2721,15 +2343,12 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                 "subcategory": selected_product.get('subcategory'),
                 "type": selected_product.get('type')
             }
-            
             add_user_purchase(user_id, purchase_data)
-            
             user_data['balance_usdt'] = balance - total_price
-            
             save_catalog()
             save_orders()
             save_users()
-            
+
             await safe_edit_message_text(
                 query=query,
                 text=f"🎉 **Покупка успешно завершена!**\n\n"
@@ -2747,9 +2366,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                     [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
                 ])
             )
-            
             logger.info(f"Пользователь {user_id} купил {quantity} файлов из набора {selected_product['id']} за {total_price} USDT")
-        
         except Exception as e:
             logger.error(f"Ошибка обработки набора товара: {e}")
             await safe_edit_message_text(
@@ -2759,20 +2376,19 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                 reply_markup=get_main_inline_keyboard(user_id)
             )
         return
-    
+
     elif selected_product.get('has_file') and selected_product.get('file_path'):
         try:
             if not os.path.exists(selected_product['file_path']):
                 logger.error(f"Файл не найден: {selected_product['file_path']}")
                 await safe_answer_query(query, "❌ Файл товара не найден на сервере", show_alert=True)
                 return
-            
+
             old_quantity = selected_product.get('quantity', 1)
             selected_product['quantity'] = old_quantity - quantity
-            
             if selected_product['quantity'] <= 0:
                 selected_product['sold'] = True
-            
+
             order = {
                 "order_id": order_id,
                 "user_id": user_id,
@@ -2786,9 +2402,8 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                 "quantity": quantity,
                 "is_bundle": False
             }
-            
             orders.append(order)
-            
+
             purchase_data = {
                 "order_id": order_id,
                 "product_id": selected_product['id'],
@@ -2804,19 +2419,15 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                 "subcategory": selected_product.get('subcategory'),
                 "type": selected_product.get('type')
             }
-            
             add_user_purchase(user_id, purchase_data)
-            
             user_data['balance_usdt'] = balance - total_price
-            
             if "orders" not in user_data:
                 user_data["orders"] = []
             user_data['orders'].append(order_id)
-            
             save_catalog()
             save_orders()
             save_users()
-            
+
             await safe_edit_message_text(
                 query=query,
                 text=f"🎉 **Покупка успешно завершена!**\n\n"
@@ -2832,9 +2443,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                     [InlineKeyboardButton("🔙 В главное меню", callback_data="back_to_menu")]
                 ])
             )
-            
             logger.info(f"Пользователь {user_id} купил товар {selected_product['id']} в количестве {quantity} шт. за {total_price} USDT")
-        
         except Exception as e:
             logger.error(f"Ошибка обработки файлового товара: {e}")
             await safe_edit_message_text(
@@ -2844,14 +2453,13 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
                 reply_markup=get_main_inline_keyboard(user_id)
             )
         return
-    
+
     else:
         old_quantity = selected_product.get('quantity', 10)
         selected_product['quantity'] = old_quantity - quantity
-        
         if selected_product['quantity'] <= 0:
             selected_product['sold'] = True
-        
+
         order = {
             "order_id": order_id,
             "user_id": user_id,
@@ -2863,9 +2471,8 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             "quantity": quantity,
             "is_bundle": False
         }
-        
         orders.append(order)
-        
+
         purchase_data = {
             "order_id": order_id,
             "product_id": selected_product['id'],
@@ -2879,19 +2486,15 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             "subcategory": selected_product.get('subcategory'),
             "type": selected_product.get('type')
         }
-        
         add_user_purchase(user_id, purchase_data)
-        
         user_data['balance_usdt'] = balance - total_price
-        
         if "orders" not in user_data:
             user_data["orders"] = []
         user_data['orders'].append(order_id)
-        
         save_catalog()
         save_orders()
         save_users()
-        
+
         await safe_edit_message_text(
             query=query,
             text=f"✅ **Покупка совершена!**\n\n"
@@ -2904,46 +2507,39 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             parse_mode='Markdown',
             reply_markup=get_main_inline_keyboard(user_id)
         )
-        
         logger.info(f"Пользователь {user_id} купил товар {selected_product['id']} в количестве {quantity} шт. за {total_price} USDT")
 
 async def handle_product_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     data = query.data
     if not data.startswith("product:"):
         await safe_answer_query(query, "❌ Ошибка выбора товара", show_alert=True)
         return
-    
     product_id = data.split(":", 1)[1]
     await show_product_details(update, context, product_id)
 
 # ========== ПРОМОКОДЫ ==========
-
 def generate_promo_code(length=8):
-    """Генерирует случайный код из букв и цифр"""
     chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
     return ''.join(random.choices(chars, k=length))
 
 def get_available_item_products():
-    """Возвращает список доступных товаров с файлами (не наборы)"""
     return [p for p in catalog if p.get('has_file') and not p.get('is_bundle') and is_product_available(p)]
 
+def get_promocodable_products():
+    return [p for p in catalog if p.get('has_file') and is_product_available(p)]
+
 async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFAULT_TYPE) -> Tuple[bool, str]:
-    """Активирует промокод. Возвращает (успех, сообщение)"""
     code_upper = code.upper()
     if code_upper not in promocodes:
         return False, "❌ Промокод не найден."
-    
     promo = promocodes[code_upper]
     if not promo.get('active', True):
         return False, "❌ Промокод уже использован."
-    
     user_data = ensure_user_registered(user_id)
-    
+
     if promo['type'] == 'balance':
-        # Денежный промокод
         amount = promo['value']
         user_data['balance_usdt'] = user_data.get('balance_usdt', 0.0) + amount
         promo['active'] = False
@@ -2952,26 +2548,21 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
         save_users()
         save_promocodes()
         return True, f"✅ Промокод активирован! Вам зачислено {amount} USDT."
-    
+
     elif promo['type'] == 'item':
-        # Товарный промокод
         product_id = promo['value']
-        # Ищем товар
         product = next((p for p in catalog if p['id'] == product_id), None)
         if not product or not is_product_available(product):
             return False, "❌ Товар по промокоду больше не доступен."
-        
-        # Выдаём товар бесплатно (аналогично покупке)
+
         if product.get('has_file') and product.get('file_path'):
-            # Файловый товар (одиночный)
             if not os.path.exists(product['file_path']):
                 return False, "❌ Файл товара отсутствует на сервере."
-            
             old_quantity = product.get('quantity', 1)
             product['quantity'] = old_quantity - 1
             if product['quantity'] <= 0:
                 product['sold'] = True
-            
+
             purchase_data = {
                 "product_id": product['id'],
                 "product_name": product['name'],
@@ -2987,15 +2578,14 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
                 "type": product.get('type')
             }
             purchase_id = add_user_purchase(user_id, purchase_data)
-            
+
             promo['active'] = False
             promo['used_by'] = user_id
             promo['used_at'] = datetime.now().isoformat()
             save_catalog()
             save_purchases()
             save_promocodes()
-            
-            # Отправляем файл сразу
+
             try:
                 with open(product['file_path'], 'rb') as f:
                     await context.bot.send_document(
@@ -3007,11 +2597,9 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             except Exception as e:
                 logger.error(f"Ошибка отправки файла по промокоду: {e}")
                 return True, f"✅ Товар получен, но файл не удалось отправить. Обратитесь в поддержку."
-            
             return True, f"✅ Промокод активирован! Товар **{product['name']}** отправлен."
-        
+
         elif product.get('is_bundle'):
-            # Набор файлов — выдаём один случайный файл из набора
             bundle_files = product.get('bundle_files', [])
             available = [f for f in bundle_files if not f.get('sold')]
             if not available:
@@ -3019,7 +2607,7 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             file_to_give = random.choice(available)
             file_to_give['sold'] = True
             file_to_give['sold_at'] = datetime.now().isoformat()
-            
+
             purchase_data = {
                 "product_id": product['id'],
                 "product_name": product['name'],
@@ -3034,14 +2622,14 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
                 "type": product.get('type')
             }
             add_user_purchase(user_id, purchase_data)
-            
+
             promo['active'] = False
             promo['used_by'] = user_id
             promo['used_at'] = datetime.now().isoformat()
             save_catalog()
             save_purchases()
             save_promocodes()
-            
+
             try:
                 with open(file_to_give['path'], 'rb') as f:
                     await context.bot.send_document(
@@ -3053,19 +2641,14 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             except Exception as e:
                 logger.error(f"Ошибка отправки файла из набора по промокоду: {e}")
                 return True, f"✅ Файл получен, но не удалось отправить. Обратитесь в поддержку."
-            
             return True, f"✅ Промокод активирован! Файл из набора **{product['name']}** отправлен."
-        
         else:
             return False, "❌ Товар не поддерживает выдачу."
-    
     return False, "❌ Неизвестный тип промокода."
 
 async def promo_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатия на кнопку Промокод"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text="🎟️ **Введите промокод**\n\n"
@@ -3077,23 +2660,20 @@ async def promo_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['awaiting_promo_code'] = True
 
 # ========== АДМИН ФУНКЦИИ ==========
-
 async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     total_products = len(catalog)
     file_products = len([p for p in catalog if p.get('has_file')])
     bundle_products = len([p for p in catalog if p.get('is_bundle', False)])
     sold_file_products = len([p for p in catalog if p.get('has_file') and p.get('sold', False)])
     active_file_products = len([p for p in catalog if p.get('has_file') and not p.get('sold', False)])
-    
+
     total_bundle_files = 0
     available_bundle_files = 0
     for product in catalog:
@@ -3101,9 +2681,9 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             bundle_files = product.get('bundle_files', [])
             total_bundle_files += len(bundle_files)
             available_bundle_files += get_available_files_count(bundle_files)
-    
+
     pending_requests = sum(1 for req in requests_dict.values() if req.get('status') == 'pending')
-    
+
     stats_text = (
         f"👑 **Панель администратора**\n\n"
         f"📊 **Статистика товаров:**\n"
@@ -3121,7 +2701,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"👥 **Администраторы:** {len(admins)} человек\n"
         f"🎟️ **Промокоды:** {len(promocodes)} всего, {sum(1 for p in promocodes.values() if p.get('active'))} активных"
     )
-    
+
     await safe_edit_message_text(
         query=query,
         text=stats_text,
@@ -3130,20 +2710,15 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 # ========== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ==========
-# (Весь код из оригинального файла bot (6).py вставлен ниже, начиная с admin_manage_categories_handler)
-
 async def admin_manage_categories_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     info_text = ""
     if categories:
         info_text = f"📊 **Статистика:**\n• Категорий: {len(categories)}\n"
@@ -3153,7 +2728,7 @@ async def admin_manage_categories_handler(update: Update, context: ContextTypes.
             info_text += f"\n📁 **{category}:**\n"
             info_text += f"   📂 Подкатегорий: {len(subcategories)}\n"
             info_text += f"   📝 Типов в категории: {len(category_types)}\n"
-    
+
     await safe_edit_message_text(
         query=query,
         text="📂 **Управление категориями**\n\n"
@@ -3164,7 +2739,7 @@ async def admin_manage_categories_handler(update: Update, context: ContextTypes.
             "⚠️ **Важно:** Тип можно создать:\n"
             "• В категории (без подкатегории)\n"
             "• В подкатегории\n\n"
-            + info_text + 
+            + info_text +
             "\n**Выберите действие:**",
         parse_mode='Markdown',
         reply_markup=get_category_management_keyboard()
@@ -3173,13 +2748,11 @@ async def admin_manage_categories_handler(update: Update, context: ContextTypes.
 async def admin_add_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     await safe_edit_message_text(
         query=query,
         text="➕ **Создание новой категории**\n\n"
@@ -3193,37 +2766,31 @@ async def admin_add_category_handler(update: Update, context: ContextTypes.DEFAU
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")]
         ])
     )
-    
     context.user_data['awaiting_category_name'] = True
 
 async def admin_add_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="❌ **Нет категорий!**\n\n"
-                "Сначала создайте категорию.",
+            text="❌ **Нет категорий!**\n\nСначала создайте категорию.",
             parse_mode='Markdown',
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         keyboard.append([InlineKeyboardButton(f"📁 {category}", callback_data=f"select_category_for_subcat:{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
-    
+
     await safe_edit_message_text(
         query=query,
         text="📂 **Создание подкатегории в категории**\n\n"
@@ -3236,34 +2803,28 @@ async def admin_add_subcategory_handler(update: Update, context: ContextTypes.DE
     )
 
 async def admin_add_type_to_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавление типа в категорию (без подкатегории)"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="❌ **Нет категорий!**\n\n"
-                "Сначала создайте категорию.",
+            text="❌ **Нет категорий!**\n\nСначала создайте категорию.",
             parse_mode='Markdown',
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         keyboard.append([InlineKeyboardButton(f"📁 {category}", callback_data=f"select_category_for_type_to_category:{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
-    
+
     await safe_edit_message_text(
         query=query,
         text="📝 **Создание типа в категории (БЕЗ подкатегории)**\n\n"
@@ -3275,34 +2836,28 @@ async def admin_add_type_to_category_handler(update: Update, context: ContextTyp
     )
 
 async def admin_add_type_to_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Добавление типа в подкатегорию"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="❌ **Нет категорий!**\n\n"
-                "Сначала создайте категорию.",
+            text="❌ **Нет категорий!**\n\nСначала создайте категорию.",
             parse_mode='Markdown',
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         keyboard.append([InlineKeyboardButton(f"📁 {category} ▶", callback_data=f"select_category_for_type:{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
-    
+
     await safe_edit_message_text(
         query=query,
         text="📝 **Создание типа в подкатегории**\n\n"
@@ -3314,10 +2869,8 @@ async def admin_add_type_to_subcategory_handler(update: Update, context: Context
     )
 
 async def select_category_for_type_to_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
-    """Обработчик выбора категории для добавления типа (без подкатегории)"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text=f"➕ **Добавление типа в категорию (без подкатегории): {category}**\n\n"
@@ -3329,16 +2882,11 @@ async def select_category_for_type_to_category_handler(update: Update, context: 
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_add_type_to_category")]
         ])
     )
-    
-    context.user_data['awaiting_type_to_category'] = {
-        'category': category,
-        'subcategory': None
-    }
+    context.user_data['awaiting_type_to_category'] = {'category': category, 'subcategory': None}
 
 async def select_category_for_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text=f"➕ **Добавление подкатегории в категорию: {category}**\n\n"
@@ -3350,15 +2898,12 @@ async def select_category_for_subcategory_handler(update: Update, context: Conte
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_add_subcategory")]
         ])
     )
-    
     context.user_data['awaiting_subcategory_name'] = category
 
 async def select_category_for_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     subcategories = get_subcategories(category)
-    
     if not subcategories:
         await safe_edit_message_text(
             query=query,
@@ -3370,13 +2915,12 @@ async def select_category_for_type_handler(update: Update, context: ContextTypes
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for subcategory in subcategories:
         keyboard.append([InlineKeyboardButton(f"📂 {subcategory}", callback_data=f"select_subcategory_for_type:{category}:{subcategory}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_add_type_to_subcategory")])
-    
+
     await safe_edit_message_text(
         query=query,
         text=f"📝 **Создание типа в подкатегории**\n"
@@ -3392,7 +2936,6 @@ async def select_category_for_type_handler(update: Update, context: ContextTypes
 async def select_subcategory_for_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text=f"➕ **Добавление типа в подкатегорию: {subcategory}**\n"
@@ -3405,52 +2948,39 @@ async def select_subcategory_for_type_handler(update: Update, context: ContextTy
             [InlineKeyboardButton("🔙 Назад", callback_data=f"select_category_for_type:{category}")]
         ])
     )
-    
-    context.user_data['awaiting_type_name'] = {
-        'category': category,
-        'subcategory': subcategory
-    }
+    context.user_data['awaiting_type_name'] = {'category': category, 'subcategory': subcategory}
 
 async def admin_view_structure_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="📭 **Нет категорий!**\n\n"
-                "Структура каталога пуста.",
+            text="📭 **Нет категорий!**\n\nСтруктура каталога пуста.",
             parse_mode='Markdown',
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     structure_text = "📊 **Структура каталога:**\n\n"
-    
     for i, category in enumerate(categories, 1):
         structure_text += f"{i}. 📁 **{category}**\n"
-        
         subcategories = get_subcategories(category)
-        
         category_types = get_types(category, None)
         if category_types:
             structure_text += f"   📝 **Типы в категории:**\n"
             for type_ in category_types:
                 product_count = len([p for p in catalog if p.get('category') == category and p.get('type') == type_ and not p.get('subcategory')])
                 structure_text += f"      • {type_} ({product_count} товаров)\n"
-        
         if subcategories:
             for j, subcategory in enumerate(subcategories, 1):
                 structure_text += f"   {j}. 📂 **{subcategory}**\n"
-                
                 types = get_types(category, subcategory)
                 if types:
                     for k, type_ in enumerate(types, 1):
@@ -3462,12 +2992,11 @@ async def admin_view_structure_handler(update: Update, context: ContextTypes.DEF
         else:
             product_count = len(get_products_by_path(category))
             structure_text += f"   • 📦 Товаров без подкатегории: {product_count}\n"
-        
         structure_text += "\n"
-    
+
     total_products = len(catalog)
     structure_text += f"📦 **Всего товаров в каталоге:** {total_products}"
-    
+
     await safe_edit_message_text(
         query=query,
         text=structure_text,
@@ -3481,15 +3010,12 @@ async def admin_view_structure_handler(update: Update, context: ContextTypes.DEF
 async def admin_delete_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
@@ -3498,17 +3024,16 @@ async def admin_delete_category_handler(update: Update, context: ContextTypes.DE
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         product_count = len(get_products_by_path(category))
         keyboard.append([InlineKeyboardButton(
-            f"🗑️ {category} ({product_count} товаров)", 
+            f"🗑️ {category} ({product_count} товаров)",
             callback_data=f"confirm_delete_category:{category}"
         )])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
-    
+
     await safe_edit_message_text(
         query=query,
         text="🗑️ **Удаление категории**\n\n"
@@ -3521,16 +3046,14 @@ async def admin_delete_category_handler(update: Update, context: ContextTypes.DE
 async def confirm_delete_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     product_count = len(get_products_by_path(category))
     subcategories = get_subcategories(category)
-    
+
     confirm_text = (
         f"⚠️ **Подтверждение удаления категории:** {category}\n\n"
         f"📊 **Статистика для удаления:**\n"
@@ -3540,7 +3063,7 @@ async def confirm_delete_category_handler(update: Update, context: ContextTypes.
         f"❌ **Все данные будут безвозвратно удалены!**\n\n"
         f"Вы уверены что хотите удалить категорию '{category}'?"
     )
-    
+
     await safe_edit_message_text(
         query=query,
         text=confirm_text,
@@ -3549,19 +3072,15 @@ async def confirm_delete_category_handler(update: Update, context: ContextTypes.
     )
 
 async def final_delete_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
-    """Финальное удаление категории после подтверждения"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     products_to_delete = get_products_by_path(category)
     deleted_count = 0
-    
     for product in products_to_delete:
         if product.get('has_file') and product.get('file_path'):
             try:
@@ -3570,12 +3089,10 @@ async def final_delete_category_handler(update: Update, context: ContextTypes.DE
                     os.remove(file_path)
             except Exception as e:
                 logger.error(f"Ошибка удаления файла {product['file_path']}: {e}")
-        
         catalog[:] = [p for p in catalog if p['id'] != product['id']]
         deleted_count += 1
-    
+
     save_catalog()
-    
     await safe_edit_message_text(
         query=query,
         text=f"✅ **Категория '{category}' успешно удалена!**\n\n"
@@ -3587,58 +3104,46 @@ async def final_delete_category_handler(update: Update, context: ContextTypes.DE
         reply_markup=get_back_to_categories_keyboard()
     )
 
-# ========== НОВЫЕ ФУНКЦИИ ДЛЯ УДАЛЕНИЯ ПОДКАТЕГОРИИ ==========
-
+# ========== УДАЛЕНИЕ ПОДКАТЕГОРИИ ==========
 async def admin_delete_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало удаления подкатегории: показываем список категорий"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="📭 **Нет категорий для удаления подкатегорий!**\n\n"
-                "Сначала создайте категорию.",
+            text="📭 **Нет категорий для удаления подкатегорий!**\n\nСначала создайте категорию.",
             parse_mode='Markdown',
             reply_markup=get_back_to_categories_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         keyboard.append([InlineKeyboardButton(f"📁 {category}", callback_data=f"select_category_for_delete_subcat:{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text="🗑️ **Удаление подкатегории**\n\n"
-            "Выберите категорию, в которой хотите удалить подкатегорию:",
+        text="🗑️ **Удаление подкатегории**\n\nВыберите категорию, в которой хотите удалить подкатегорию:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def select_category_for_delete_subcat_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
-    """Выбор подкатегории для удаления"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     subcategories = get_subcategories(category)
-    
     if not subcategories:
         await safe_edit_message_text(
             query=query,
@@ -3649,38 +3154,33 @@ async def select_category_for_delete_subcat_handler(update: Update, context: Con
             ])
         )
         return
-    
+
     keyboard = []
     for subcategory in subcategories:
         product_count = len(get_products_by_path(category, subcategory))
         keyboard.append([InlineKeyboardButton(
-            f"🗑️ {subcategory} ({product_count} товаров)", 
+            f"🗑️ {subcategory} ({product_count} товаров)",
             callback_data=f"select_subcategory_for_delete:{category}:{subcategory}"
         )])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_delete_subcategory")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text=f"🗑️ **Удаление подкатегории в категории '{category}'**\n\n"
-            "Выберите подкатегорию для удаления:",
+        text=f"🗑️ **Удаление подкатегории в категории '{category}'**\n\nВыберите подкатегорию для удаления:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def select_subcategory_for_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
-    """Подтверждение удаления подкатегории"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     product_count = len(get_products_by_path(category, subcategory))
-    
+
     confirm_text = (
         f"⚠️ **Подтверждение удаления подкатегории:**\n\n"
         f"📁 **Категория:** {category}\n"
@@ -3689,7 +3189,7 @@ async def select_subcategory_for_delete_handler(update: Update, context: Context
         f"❌ **Все данные подкатегории будут безвозвратно удалены!**\n\n"
         f"Вы уверены, что хотите удалить подкатегорию '{subcategory}'?"
     )
-    
+
     await safe_edit_message_text(
         query=query,
         text=confirm_text,
@@ -3698,19 +3198,15 @@ async def select_subcategory_for_delete_handler(update: Update, context: Context
     )
 
 async def final_delete_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
-    """Финальное удаление подкатегории"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_admin(user_id):
         await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
         return
-    
+
     products_to_delete = [p for p in catalog if p.get('category') == category and p.get('subcategory') == subcategory]
     deleted_count = 0
-    
     for product in products_to_delete:
         if product.get('has_file') and product.get('file_path'):
             try:
@@ -3719,12 +3215,10 @@ async def final_delete_subcategory_handler(update: Update, context: ContextTypes
                     os.remove(file_path)
             except Exception as e:
                 logger.error(f"Ошибка удаления файла {product['file_path']}: {e}")
-        
         catalog[:] = [p for p in catalog if p['id'] != product['id']]
         deleted_count += 1
-    
+
     save_catalog()
-    
     await safe_edit_message_text(
         query=query,
         text=f"✅ **Подкатегория '{subcategory}' успешно удалена!**\n\n"
@@ -3737,21 +3231,17 @@ async def final_delete_subcategory_handler(update: Update, context: ContextTypes
     )
 
 # ========== УПРАВЛЕНИЕ АДМИНИСТРАТОРАМИ ==========
-
 async def admin_manage_admins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_bot_owner(user_id):
         await safe_answer_query(query, "❌ Только владелец бота может управлять администраторами", show_alert=True)
         return
-    
+
     await safe_edit_message_text(
         query=query,
-        text="👥 **Управление администраторов**\n\n"
-            "Выберите действие:",
+        text="👥 **Управление администраторов**\n\nВыберите действие:",
         parse_mode='Markdown',
         reply_markup=get_admin_management_keyboard()
     )
@@ -3759,13 +3249,11 @@ async def admin_manage_admins_handler(update: Update, context: ContextTypes.DEFA
 async def admin_add_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_bot_owner(user_id):
         await safe_answer_query(query, "❌ Только владелец бота может добавлять администраторов", show_alert=True)
         return
-    
+
     response_text = (
         "➕ **Добавление администратора**\n\n"
         "Введите ID пользователя, которого хотите сделать администратором:\n\n"
@@ -3774,7 +3262,6 @@ async def admin_add_admin_handler(update: Update, context: ContextTypes.DEFAULT_
         "2. Или используйте команду /addadmin USER_ID\n\n"
         "Напишите ID пользователя:"
     )
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -3783,19 +3270,16 @@ async def admin_add_admin_handler(update: Update, context: ContextTypes.DEFAULT_
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_admins")]
         ])
     )
-    
     context.user_data['awaiting_admin_id'] = 'add'
 
 async def admin_remove_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_bot_owner(user_id):
         await safe_answer_query(query, "❌ Только владелец бота может удалять администраторов", show_alert=True)
         return
-    
+
     response_text = (
         "➖ **Удаление администратора**\n\n"
         "Введите ID пользователя, которого хотите удалить из администраторов:\n\n"
@@ -3803,7 +3287,6 @@ async def admin_remove_admin_handler(update: Update, context: ContextTypes.DEFAU
         "Нажмите '👥 Список администраторов'\n\n"
         "Напишите ID пользователя:"
     )
-    
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -3812,37 +3295,30 @@ async def admin_remove_admin_handler(update: Update, context: ContextTypes.DEFAU
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_admins")]
         ])
     )
-    
     context.user_data['awaiting_admin_id'] = 'remove'
 
 async def admin_list_admins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     user_id = query.from_user.id
-    
     if not is_bot_owner(user_id):
         await safe_answer_query(query, "❌ Только владелец бота может просматривать список администраторов", show_alert=True)
         return
-    
+
     response_text = "👥 **Список администраторов:**\n\n"
-    
     for i, admin_id in enumerate(admins, 1):
         admin_info = users.get(str(admin_id), {})
         username = admin_info.get('username', 'unknown')
         first_name = admin_info.get('first_name', f'Пользователь {admin_id}')
-        
         if admin_id == BOT_OWNER_ID:
             response_text += f"{i}. 👑 **Владелец бота:**\n"
         else:
             response_text += f"{i}. 👤 **Администратор:**\n"
-        
         response_text += f"   👤 **Имя:** {first_name}\n"
         response_text += f"   📧 **Username:** @{username}\n"
         response_text += f"   🆔 **ID:** `{admin_id}`\n\n"
-    
     response_text += f"📊 **Всего администраторов:** {len(admins)}"
-    
+
     await safe_edit_message_text(
         query=query,
         text=response_text,
@@ -3852,11 +3328,9 @@ async def admin_list_admins_handler(update: Update, context: ContextTypes.DEFAUL
 
 async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not is_bot_owner(user_id):
         await update.message.reply_text("⛔ Только владелец бота может добавлять администраторов")
         return
-    
     if not context.args:
         await update.message.reply_text(
             "➕ **Добавление администратора**\n\n"
@@ -3867,27 +3341,20 @@ async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
         return
-    
     try:
         new_admin_id = int(context.args[0])
-        
         if new_admin_id in admins:
             await update.message.reply_text("❌ Этот пользователь уже является администратором")
             return
-        
         if add_admin(new_admin_id):
             await update.message.reply_text(
-                f"✅ **Пользователь {new_admin_id} добавлен в администраторы!**\n\n"
-                f"Теперь он имеет доступ к админ-панели.",
+                f"✅ **Пользователь {new_admin_id} добавлен в администраторы!**\n\nТеперь он имеет доступ к админ-панели.",
                 parse_mode='Markdown'
             )
-            
             try:
                 await context.bot.send_message(
                     chat_id=new_admin_id,
-                    text=f"👑 **Вы стали администратором бота!**\n\n"
-                         f"Владелец бота назначил вас администратором.\n"
-                         f"Используйте команду /admin для доступа к панели управления.",
+                    text=f"👑 **Вы стали администратором бота!**\n\nВладелец бота назначил вас администратором.\nИспользуйте команду /admin для доступа к панели управления.",
                     parse_mode='Markdown',
                     reply_markup=get_main_inline_keyboard(new_admin_id)
                 )
@@ -3895,17 +3362,14 @@ async def addadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Не удалось уведомить пользователя {new_admin_id}: {e}")
         else:
             await update.message.reply_text("❌ Ошибка добавления администратора")
-        
     except ValueError:
         await update.message.reply_text("❌ Неверный формат ID. ID должен быть числом")
 
 async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not is_bot_owner(user_id):
         await update.message.reply_text("⛔ Только владелец бота может удалять администраторов")
         return
-    
     if not context.args:
         await update.message.reply_text(
             "➖ **Удаление администратора**\n\n"
@@ -3916,23 +3380,18 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode='Markdown'
         )
         return
-    
     try:
         admin_id_to_remove = int(context.args[0])
-        
         if admin_id_to_remove == BOT_OWNER_ID:
             await update.message.reply_text("❌ Нельзя удалить владельца бота")
             return
-        
         if admin_id_to_remove not in admins:
             await update.message.reply_text("❌ Этот пользователь не является администратором")
             return
-        
         if remove_admin(admin_id_to_remove):
             admin_info = users.get(str(admin_id_to_remove), {})
             username = admin_info.get('username', 'unknown')
             first_name = admin_info.get('first_name', 'User')
-            
             await update.message.reply_text(
                 f"✅ **Администратор {first_name} удален!**\n\n"
                 f"👤 **Имя:** {first_name}\n"
@@ -3941,12 +3400,10 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"Пользователь больше не имеет прав администратора.",
                 parse_mode='Markdown'
             )
-            
             try:
                 await context.bot.send_message(
                     chat_id=admin_id_to_remove,
-                    text=f"👑 **Вы больше не администратор бота.**\n\n"
-                         f"Владелец бота снял с вас права администратора.",
+                    text=f"👑 **Вы больше не администратор бота.**\n\nВладелец бота снял с вас права администратора.",
                     parse_mode='Markdown',
                     reply_markup=get_main_inline_keyboard(admin_id_to_remove)
                 )
@@ -3954,16 +3411,13 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
                 logger.error(f"Не удалось уведомить пользователя {admin_id_to_remove}: {e}")
         else:
             await update.message.reply_text("❌ Ошибка удаления администратора")
-        
     except ValueError:
         await update.message.reply_text("❌ Неверный формат ID. ID должен быть числом")
 
 # ========== СОЗДАНИЕ ТОВАРА ==========
-
 async def admin_create_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text="➕ **Создание нового товара**\n\n"
@@ -3982,7 +3436,6 @@ async def admin_create_product_handler(update: Update, context: ContextTypes.DEF
         parse_mode='Markdown',
         reply_markup=get_back_to_admin_keyboard()
     )
-    
     context.user_data['awaiting_product_data'] = True
 
 async def process_product_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, product_data: str):
@@ -3996,9 +3449,8 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
             if 'awaiting_product_data' in context.user_data:
                 del context.user_data['awaiting_product_data']
             return
-        
+
         parts = [p.strip() for p in product_data.split('|')]
-        
         if len(parts) < 7:
             await update.message.reply_text(
                 "❌ **Недостаточно данных!**\n\n"
@@ -4009,13 +3461,13 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
                 parse_mode='Markdown'
             )
             return
-        
+
         name, price_usdt_str, description, category, subcategory, type_, has_file_str = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
-        
+
         if not name or len(name) < 2:
             await update.message.reply_text("❌ **Название товара слишком короткое!** Минимум 2 символа.")
             return
-        
+
         try:
             price_usdt = float(price_usdt_str.replace(',', '.'))
             if price_usdt <= 0:
@@ -4033,15 +3485,15 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
                 parse_mode='Markdown'
             )
             return
-        
+
         if not description or len(description) < 5:
             await update.message.reply_text("❌ **Описание слишком короткое!** Минимум 5 символов.")
             return
-        
+
         if not category or len(category) < 2:
             await update.message.reply_text("❌ **Категория слишком короткая!** Минимум 2 символа.")
             return
-        
+
         has_file = has_file_str.lower() == 'true'
         if has_file_str.lower() not in ['true', 'false']:
             await update.message.reply_text(
@@ -4051,9 +3503,8 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
                 parse_mode='Markdown'
             )
             return
-        
+
         product_id = f"prod_{uuid.uuid4().hex[:8]}"
-        
         new_product = {
             "id": product_id,
             "name": name,
@@ -4067,17 +3518,16 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
             "created_at": datetime.now().isoformat(),
             "sold": False
         }
-        
         if has_file:
             new_product.update({
                 "file_path": None,
                 "file_name": None,
                 "file_uploaded": False
             })
-        
+
         catalog.append(new_product)
         save_catalog()
-        
+
         response_text = (
             f"✅ **Товар создан успешно!**\n\n"
             f"🆔 **ID товара:** `{product_id}`\n"
@@ -4090,7 +3540,7 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
             f"📄 **Файловый товар:** {'Да' if has_file else 'Нет'}\n"
             f"📦 **Количество:** {new_product['quantity']} шт."
         )
-        
+
         if has_file:
             response_text += (
                 f"\n\n📎 **Чтобы прикрепить файл:**\n"
@@ -4099,16 +3549,15 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
                 f"3. Отправьте файл .txt\n\n"
                 f"⚠️ **Товар не будет отображаться в каталоге до прикрепления файла!**"
             )
-        
+
         await update.message.reply_text(
             response_text,
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
-        
+
         if 'awaiting_product_data' in context.user_data:
             del context.user_data['awaiting_product_data']
-        
     except Exception as e:
         logger.error(f"Ошибка создания товара: {e}")
         await update.message.reply_text(
@@ -4121,33 +3570,27 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
         )
 
 # ========== МАССОВАЯ ЗАГРУЗКА В ТИП ==========
-
 async def admin_bulk_upload_to_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     categories = get_categories()
-    
     if not categories:
         await safe_edit_message_text(
             query=query,
-            text="❌ **Нет категорий!**\n\n"
-                "Сначала добавьте категорию.",
+            text="❌ **Нет категорий!**\n\nСначала добавьте категорию.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard = []
     for category in categories:
         keyboard.append([InlineKeyboardButton(f"📁 {category} ▶", callback_data=f"bulk_select_category:{category}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text="📦 **Массовая загрузка в тип**\n\n"
-            "Выберите категорию:",
+        text="📦 **Массовая загрузка в тип**\n\nВыберите категорию:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -4155,31 +3598,27 @@ async def admin_bulk_upload_to_type_handler(update: Update, context: ContextType
 async def bulk_select_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     subcategories = get_subcategories(category)
     category_types = get_types(category, None)
-    
+
     keyboard = []
-    
     if subcategories:
         for subcategory in subcategories:
             keyboard.append([InlineKeyboardButton(f"📂 {subcategory} ▶", callback_data=f"bulk_select_subcategory:{category}:{subcategory}")])
-    
     if category_types:
         keyboard.append([InlineKeyboardButton(f"📝 Типы в категории (без подкатегории)", callback_data=f"bulk_category_types:{category}")])
-    
+
     if not keyboard:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет подкатегорий или типов!**\n\n"
-                "Сначала добавьте подкатегорию или тип в категорию.",
+            text=f"❌ **В категории '{category}' нет подкатегорий или типов!**\n\nСначала добавьте подкатегорию или тип в категорию.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_bulk_upload_to_type")])
-    
+
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
@@ -4190,29 +3629,24 @@ async def bulk_select_category_handler(update: Update, context: ContextTypes.DEF
     )
 
 async def bulk_category_types_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
-    """Обработчик для массовой загрузки в типы категории (без подкатегории)"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     category_types = get_types(category, None)
-    
     if not category_types:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет типов (без подкатегории)!**\n\n"
-                "Сначала добавьте тип в категорию.",
+            text=f"❌ **В категории '{category}' нет типов (без подкатегории)!**\n\nСначала добавьте тип в категорию.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard = []
     for type_ in category_types:
         product_count = len([p for p in catalog if p.get('category') == category and p.get('type') == type_ and not p.get('subcategory')])
         keyboard.append([InlineKeyboardButton(f"📝 {type_} ({product_count} товаров)", callback_data=f"bulk_select_category_type:{category}:{type_}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_select_category:{category}")])
-    
+
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип (без подкатегории)**\n"
@@ -4225,26 +3659,22 @@ async def bulk_category_types_handler(update: Update, context: ContextTypes.DEFA
 async def bulk_select_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     types = get_types(category, subcategory)
-    
     if not types:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В подкатегории '{subcategory}' нет типов!**\n\n"
-                "Сначала добавьте тип.",
+            text=f"❌ **В подкатегории '{subcategory}' нет типов!**\n\nСначала добавьте тип.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard = []
     for type_ in types:
         product_count = len(get_products_by_path(category, subcategory, type_))
         keyboard.append([InlineKeyboardButton(f"📝 {type_} ({product_count} товаров)", callback_data=f"bulk_select_type:{category}:{subcategory}:{type_}")])
-    
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_select_category:{category}")])
-    
+
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
@@ -4256,10 +3686,8 @@ async def bulk_select_subcategory_handler(update: Update, context: ContextTypes.
     )
 
 async def bulk_select_category_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, type_: str):
-    """Обработчик выбора типа в категории (без подкатегории) для массовой загрузки"""
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип (без подкатегории)**\n"
@@ -4277,7 +3705,6 @@ async def bulk_select_category_type_handler(update: Update, context: ContextType
             [InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_category_types:{category}")]
         ])
     )
-    
     context.user_data['awaiting_bulk_upload_params'] = {
         'category': category,
         'subcategory': None,
@@ -4287,7 +3714,6 @@ async def bulk_select_category_type_handler(update: Update, context: ContextType
 async def bulk_select_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str, subcategory: str, type_: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
@@ -4306,7 +3732,6 @@ async def bulk_select_type_handler(update: Update, context: ContextTypes.DEFAULT
             [InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_select_subcategory:{category}:{subcategory}")]
         ])
     )
-    
     context.user_data['awaiting_bulk_upload_params'] = {
         'category': category,
         'subcategory': subcategory,
@@ -4315,10 +3740,8 @@ async def bulk_select_type_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not is_admin(user_id):
         return
-    
     if 'awaiting_bulk_upload_params' not in context.user_data:
         await update.message.reply_text(
             "⚠️ **Сначала укажите параметры для загрузки.**\n\n"
@@ -4332,49 +3755,44 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             ])
         )
         return
-    
+
     params = context.user_data['awaiting_bulk_upload_params']
     category = params.get('category')
     subcategory = params.get('subcategory')
     type_ = params.get('type')
-    
     document = update.message.document
-    
+
     if not document.file_name.endswith('.txt'):
         await update.message.reply_text("❌ **Поддерживаются только .txt файлы!**")
         return
-    
+
     try:
         existing_bundle = None
         bundle_name = f"Набор {type_}"
-        
         for product in catalog:
-            if (product.get('category') == category and 
+            if (product.get('category') == category and
                 product.get('type') == type_ and
                 product.get('is_bundle', False) and
                 bundle_name in product.get('name', '')):
-                
                 if subcategory is None and not product.get('subcategory'):
                     existing_bundle = product
                     break
                 elif subcategory and product.get('subcategory') == subcategory:
                     existing_bundle = product
                     break
-        
+
         if existing_bundle:
             bundle_files = existing_bundle.get('bundle_files', [])
-            
             file_names = {f['name'] for f in bundle_files}
             if document.file_name in file_names:
                 await update.message.reply_text(f"❌ **Файл '{document.file_name}' уже есть в наборе!**")
                 return
-            
+
             file = await context.bot.get_file(document.file_id)
             file_name = f"{existing_bundle['id']}_{len(bundle_files) + 1}.txt"
             file_path = os.path.join(PRODUCT_FILES_DIR, file_name)
-            
             await file.download_to_drive(custom_path=file_path)
-            
+
             bundle_files.append({
                 "name": document.file_name,
                 "path": file_path,
@@ -4382,14 +3800,12 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
                 "added_at": datetime.now().isoformat(),
                 "sold": False
             })
-            
             existing_bundle['bundle_files'] = bundle_files
             save_catalog()
-            
+
             available_files = get_available_files_count(bundle_files)
-            
             subcategory_line = f"📂 Подкатегория: {subcategory}\n" if subcategory else ""
-            
+
             await update.message.reply_text(
                 f"✅ **Файл '{document.file_name}' добавлен в существующий набор!**\n\n"
                 f"📦 **Набор:** {existing_bundle['name']}\n"
@@ -4405,19 +3821,16 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
                 ])
             )
-            
         else:
             price = params.get('price', 1.11)
             description = params.get('description', f'Набор файлов для типа {type_}')
-            
             product_id = f"bundle_{uuid.uuid4().hex[:8]}"
-            
+
             file = await context.bot.get_file(document.file_id)
             file_name = f"{product_id}_1.txt"
             file_path = os.path.join(PRODUCT_FILES_DIR, file_name)
-            
             await file.download_to_drive(custom_path=file_path)
-            
+
             new_bundle = {
                 "id": product_id,
                 "name": generate_unique_bundle_name(f"Набор {type_}"),
@@ -4441,12 +3854,11 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
                     }
                 ]
             }
-            
             catalog.append(new_bundle)
             save_catalog()
-            
+
             subcategory_text = f"📂 **Подкатегория:** {subcategory}\n" if subcategory else ""
-            
+
             await update.message.reply_text(
                 f"✅ **Создан новый набор! Файл '{document.file_name}' добавлен.**\n\n"
                 f"📦 **Название набора:** {new_bundle['name']}\n"
@@ -4463,7 +3875,6 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
                 ])
             )
-        
     except Exception as e:
         logger.error(f"Ошибка загрузки файла {document.file_name}: {e}")
         await update.message.reply_text(
@@ -4472,82 +3883,67 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 # ========== ПРИКРЕПЛЕНИЕ ФАЙЛА ==========
-
 async def admin_attach_file_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     products_without_files = [p for p in catalog if p.get('has_file') and not p.get('file_path') and not p.get('sold', False)]
-    
     if not products_without_files:
         await safe_edit_message_text(
             query=query,
-            text="✅ **Все файлы загружены!**\n\n"
-                "Нет товаров, требующих прикрепления файла.",
+            text="✅ **Все файлы загружены!**\n\nНет товаров, требующих прикрепления файла.",
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard = []
     for product in products_without_files:
         keyboard.append([InlineKeyboardButton(
-            f"{product['name']} ({product['price']} USDT)", 
+            f"{product['name']} ({product['price']} USDT)",
             callback_data=f"attach_to:{product['id']}"
         )])
-    
     keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text="📁 **Прикрепление файла к товару**\n\n"
-            "Выберите товар для прикрепления файла:",
+        text="📁 **Прикрепление файла к товару**\n\nВыберите товар для прикрепления файла:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def handle_document_for_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not is_admin(user_id):
         return
-    
+
     if 'awaiting_file_for_product' in context.user_data:
         product_id = context.user_data['awaiting_file_for_product']
-        
         load_data()
-        
         product = next((p for p in catalog if p['id'] == product_id), None)
-        
         if not product:
             await update.message.reply_text("❌ Товар не найден")
             if 'awaiting_file_for_product' in context.user_data:
                 del context.user_data['awaiting_file_for_product']
             return
-        
+
         document = update.message.document
-        
         if not document.file_name.endswith('.txt'):
             await update.message.reply_text("❌ **Поддерживаются только .txt файлы!**")
             return
-        
+
         try:
             file = await context.bot.get_file(document.file_id)
-            
             file_name = f"{product_id}_{uuid.uuid4().hex[:8]}.txt"
             file_path = os.path.join(PRODUCT_FILES_DIR, file_name)
-            
             await file.download_to_drive(custom_path=file_path)
-            
+
             product['file_path'] = file_path
             product['file_name'] = document.file_name
             product['file_uploaded'] = True
             product['file_uploaded_at'] = datetime.now().isoformat()
-            
             save_catalog()
-            
             load_data()
-            
+
             await update.message.reply_text(
                 f"✅ <b>Файл успешно прикреплен!</b>\n\n"
                 f"📦 <b>Товар:</b> {html.escape(product['name'])}\n"
@@ -4556,29 +3952,24 @@ async def handle_document_for_product(update: Update, context: ContextTypes.DEFA
                 parse_mode='HTML',
                 reply_markup=get_admin_keyboard()
             )
-            
+
             if 'awaiting_file_for_product' in context.user_data:
                 del context.user_data['awaiting_file_for_product']
-            
         except Exception as e:
             logger.error(f"Ошибка прикрепления файла: {e}")
             await update.message.reply_text(
-                f"❌ <b>Ошибка при загрузке файла:</b>\n\n"
-                f"<code>{html.escape(str(e))}</code>",
+                f"❌ <b>Ошибка при загрузке файла:</b>\n\n<code>{html.escape(str(e))}</code>",
                 parse_mode='HTML'
             )
-    
     elif 'awaiting_bulk_upload_params' in context.user_data:
         await handle_bulk_documents(update, context)
 
 # ========== ДРУГИЕ АДМИН ФУНКЦИИ ==========
-
 async def admin_delete_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     if not catalog:
         await safe_edit_message_text(
             query=query,
@@ -4587,44 +3978,38 @@ async def admin_delete_product_handler(update: Update, context: ContextTypes.DEF
             reply_markup=get_admin_keyboard()
         )
         return
-    
+
     keyboard = []
     for product in catalog:
         if not product.get('sold', False):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             keyboard.append([InlineKeyboardButton(
-                f"{emoji} {product['name']} ({product['price']} USDT)", 
+                f"{emoji} {product['name']} ({product['price']} USDT)",
                 callback_data=f"delete_product:{product['id']}"
             )])
-    
     if not keyboard:
         keyboard.append([InlineKeyboardButton("📭 Нет товаров для удаления", callback_data="no_products_delete")])
-    
     keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text="🗑️ **Удаление товара**\n\n"
-            "Выберите товар для удаления:",
+        text="🗑️ **Удаление товара**\n\nВыберите товар для удаления:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def delete_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     product = next((p for p in catalog if p['id'] == product_id), None)
-    
     if not product:
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
         return
-    
+
     product_name = product['name']
-    
     if product.get('sold', False):
         await safe_answer_query(query, "❌ Нельзя удалить проданный товар", show_alert=True)
         return
-    
+
     if product.get('has_file') and product.get('file_path'):
         try:
             file_path = product.get('file_path')
@@ -4633,14 +4018,13 @@ async def delete_product_handler(update: Update, context: ContextTypes.DEFAULT_T
                 logger.info(f"Файл удален: {file_path}")
         except Exception as e:
             logger.error(f"Ошибка удаления файла: {e}")
-    
+
     catalog[:] = [p for p in catalog if p['id'] != product_id]
     save_catalog()
-    
     global orders
     orders = [o for o in orders if o.get('product_id') != product_id]
     save_orders()
-    
+
     for user_id_str, user_data in users.items():
         if 'files_purchased' in user_data:
             user_data['files_purchased'] = [fp for fp in user_data['files_purchased'] if fp.get('product_id') != product_id]
@@ -4650,9 +4034,8 @@ async def delete_product_handler(update: Update, context: ContextTypes.DEFAULT_T
                 if 'orders' in user_data and order.get('order_id') in user_data['orders']:
                     user_data['orders'].remove(order.get('order_id'))
     save_users()
-    
+
     await safe_answer_query(query, f"✅ Товар '{product_name}' удален", show_alert=True)
-    
     await safe_edit_message_text(
         query=query,
         text=f"✅ **Товар успешно удален!**\n\n"
@@ -4666,7 +4049,6 @@ async def delete_product_handler(update: Update, context: ContextTypes.DEFAULT_T
 async def admin_add_balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     await safe_edit_message_text(
         query=query,
         text="💰 **Пополнение баланса пользователя (Админ)**\n\n"
@@ -4684,25 +4066,20 @@ async def process_admin_add_balance(update: Update, context: ContextTypes.DEFAUL
         parts = text.split()
         if len(parts) != 2:
             await update.message.reply_text(
-                "❌ **Неверный формат!**\n\n"
-                "Используйте: `USER_ID СУММА_USDT`",
+                "❌ **Неверный формат!**\n\nИспользуйте: `USER_ID СУММА_USDT`",
                 parse_mode='Markdown'
             )
             return
-        
         target_user_id = int(parts[0])
         amount = float(parts[1])
-        
         if amount <= 0:
             await update.message.reply_text("❌ Сумма должна быть больше 0")
             return
-        
         target_user_data = ensure_user_registered(target_user_id)
         old_balance = target_user_data.get('balance_usdt', 0.0)
-        
         target_user_data['balance_usdt'] = old_balance + amount
         save_users()
-        
+
         try:
             await context.bot.send_message(
                 chat_id=target_user_id,
@@ -4716,7 +4093,7 @@ async def process_admin_add_balance(update: Update, context: ContextTypes.DEFAUL
             )
         except Exception as e:
             logger.error(f"Не удалось уведомить пользователя {target_user_id}: {e}")
-        
+
         await update.message.reply_text(
             f"✅ **Баланс пользователя {target_user_id} пополнен!**\n\n"
             f"💰 **Сумма:** {amount:.2f} USDT\n"
@@ -4724,15 +4101,12 @@ async def process_admin_add_balance(update: Update, context: ContextTypes.DEFAUL
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
-        
+
         if 'awaiting_admin_add_balance' in context.user_data:
             del context.user_data['awaiting_admin_add_balance']
-        
     except ValueError:
         await update.message.reply_text(
-            "❌ **Ошибка!**\n\n"
-            "USER_ID должен быть числом\n"
-            "СУММА_USDT должна быть числом",
+            "❌ **Ошибка!**\n\nUSER_ID должен быть числом\nСУММА_USDT должна быть числом",
             parse_mode='Markdown'
         )
     except Exception as e:
@@ -4742,28 +4116,24 @@ async def process_admin_add_balance(update: Update, context: ContextTypes.DEFAUL
 async def admin_restock_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await safe_answer_query(query)
-    
     load_data()
-    
+
     keyboard = []
     for product in catalog:
         if not product.get('sold', False):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 0)
             keyboard.append([InlineKeyboardButton(
-                f"{emoji} {product['name']} - {quantity} шт.", 
+                f"{emoji} {product['name']} - {quantity} шт.",
                 callback_data=f"restock:{product['id']}"
             )])
-    
     if not keyboard:
         keyboard.append([InlineKeyboardButton("📭 Нет товаров для пополнения", callback_data="no_products")])
-    
     keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
-    
+
     await safe_edit_message_text(
         query=query,
-        text="📦 **Пополнение количества товара**\n\n"
-            "Выберите товар для пополнения:",
+        text="📦 **Пополнение количества товара**\n\nВыберите товар для пополнения:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -4771,13 +4141,11 @@ async def admin_restock_handler(update: Update, context: ContextTypes.DEFAULT_TY
 async def restock_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str):
     query = update.callback_query
     await safe_answer_query(query)
-    
     product = next((p for p in catalog if p['id'] == product_id), None)
-    
     if not product:
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
         return
-    
+
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Пополнение товара:** {product['name']}\n\n"
@@ -4788,16 +4156,332 @@ async def restock_product_handler(update: Update, context: ContextTypes.DEFAULT_
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_restock")]
         ])
     )
-    
     context.user_data['awaiting_restock'] = {
         'product_id': product_id,
         'product_name': product['name']
     }
 
-# ========== БЕЗОПАСНЫЕ ФУНКЦИИ ОБРАБОТКИ ==========
+# ========== НОВЫЕ ФУНКЦИИ ДЛЯ ЗАЯВОК ==========
+async def admin_requests_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
 
+    load_data()
+    if not requests_dict:
+        await safe_edit_message_text(
+            query=query,
+            text="📋 **Нет заявок на пополнение.**",
+            parse_mode='Markdown',
+            reply_markup=get_admin_requests_keyboard()
+        )
+        return
+
+    sorted_requests = sorted(
+        requests_dict.values(),
+        key=lambda x: (x.get('status') != 'pending', x.get('created_at', '')),
+        reverse=False
+    )
+
+    text = "📋 **Заявки на пополнение:**\n\n"
+    keyboard = []
+
+    for req in sorted_requests:
+        status_emoji = {
+            'pending': '⏳',
+            'approved': '✅',
+            'rejected': '❌'
+        }.get(req.get('status'), '❓')
+        user_info = f"{req.get('first_name')} (@{req.get('username')})"
+        text += f"{status_emoji} **{req.get('request_id')}** – {user_info}\n"
+        text += f"   💰 {req.get('rub_amount'):.2f} RUB → {req.get('usdt_amount'):.2f} USDT\n"
+        text += f"   🕐 {req.get('created_at')[:16]}\n\n"
+        keyboard.append([InlineKeyboardButton(
+            f"{status_emoji} Заявка {req.get('request_id')} – {req.get('first_name')}",
+            callback_data=f"view_request:{req.get('request_id')}"
+        )])
+
+    keyboard.append([InlineKeyboardButton("🔄 Обновить", callback_data="admin_requests_list")])
+    keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def view_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, request_id: str):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    load_data()
+    req = requests_dict.get(request_id)
+    if not req:
+        await safe_answer_query(query, "❌ Заявка не найдена", show_alert=True)
+        return
+
+    status_emoji = {
+        'pending': '⏳ Ожидает',
+        'approved': '✅ Подтверждена',
+        'rejected': '❌ Отклонена'
+    }.get(req.get('status'), '❓ Неизвестно')
+
+    text = (
+        f"📋 **Заявка #{request_id}**\n\n"
+        f"👤 **Пользователь:** {req.get('first_name')} (@{req.get('username')})\n"
+        f"🆔 **ID:** `{req.get('user_id')}`\n"
+        f"💰 **Сумма в RUB:** {req.get('rub_amount'):.2f} руб\n"
+        f"💵 **Сумма в USDT:** {req.get('usdt_amount'):.2f} USDT\n"
+        f"📅 **Создана:** {req.get('created_at')[:19]}\n"
+        f"📊 **Статус:** {status_emoji}\n"
+    )
+
+    if req.get('processed_at'):
+        text += f"⏱ **Обработана:** {req.get('processed_at')[:19]}\n"
+    if req.get('processed_by'):
+        text += f"👤 **Обработал:** `{req.get('processed_by')}`\n"
+
+    if req.get('status') == 'pending':
+        reply_markup = get_confirm_request_keyboard(request_id)
+    else:
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 К заявкам", callback_data="admin_requests_list")]
+        ])
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def confirm_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, request_id: str):
+    query = update.callback_query
+    await safe_answer_query(query)
+    admin_id = query.from_user.id
+    if not is_admin(admin_id):
+        return
+
+    load_data()
+    req = requests_dict.get(request_id)
+    if not req:
+        await safe_answer_query(query, "❌ Заявка не найдена", show_alert=True)
+        return
+    if req.get('status') != 'pending':
+        await safe_answer_query(query, "❌ Заявка уже обработана", show_alert=True)
+        return
+
+    user_id = req.get('user_id')
+    usdt_amount = req.get('usdt_amount')
+
+    user_data = ensure_user_registered(user_id)
+    user_data['balance_usdt'] = user_data.get('balance_usdt', 0.0) + usdt_amount
+    save_users()
+
+    req['status'] = 'approved'
+    req['processed_at'] = datetime.now().isoformat()
+    req['processed_by'] = admin_id
+    save_requests()
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"✅ **Ваша заявка на пополнение подтверждена!**\n\n"
+                f"🆔 **Номер заявки:** `{request_id}`\n"
+                f"💰 **Сумма в рублях:** {req.get('rub_amount'):.2f} руб\n"
+                f"💵 **Зачислено USDT:** {usdt_amount:.2f} USDT\n"
+                f"💳 **Новый баланс:** {user_data['balance_usdt']:.2f} USDT"
+            ),
+            parse_mode='Markdown',
+            reply_markup=get_main_inline_keyboard(user_id)
+        )
+    except Exception as e:
+        logger.error(f"Не удалось уведомить пользователя {user_id}: {e}")
+
+    await safe_answer_query(query, "✅ Заявка подтверждена, баланс пополнен", show_alert=True)
+    await admin_requests_list_handler(update, context)
+
+async def reject_request_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, request_id: str):
+    query = update.callback_query
+    await safe_answer_query(query)
+    admin_id = query.from_user.id
+    if not is_admin(admin_id):
+        return
+
+    load_data()
+    req = requests_dict.get(request_id)
+    if not req:
+        await safe_answer_query(query, "❌ Заявка не найдена", show_alert=True)
+        return
+    if req.get('status') != 'pending':
+        await safe_answer_query(query, "❌ Заявка уже обработана", show_alert=True)
+        return
+
+    req['status'] = 'rejected'
+    req['processed_at'] = datetime.now().isoformat()
+    req['processed_by'] = admin_id
+    save_requests()
+
+    try:
+        await context.bot.send_message(
+            chat_id=req.get('user_id'),
+            text=(
+                f"❌ **Ваша заявка на пополнение отклонена.**\n\n"
+                f"🆔 **Номер заявки:** `{request_id}`\n"
+                f"💰 **Сумма в рублях:** {req.get('rub_amount'):.2f} руб\n"
+                f"💵 **Сумма в USDT:** {req.get('usdt_amount'):.2f} USDT\n\n"
+                f"По вопросам обратитесь к администратору @{ADMIN_USERNAME}."
+            ),
+            parse_mode='Markdown',
+            reply_markup=get_main_inline_keyboard(req.get('user_id'))
+        )
+    except Exception as e:
+        logger.error(f"Не удалось уведомить пользователя {req.get('user_id')}: {e}")
+
+    await safe_answer_query(query, "❌ Заявка отклонена", show_alert=True)
+    await admin_requests_list_handler(update, context)
+
+# ========== НОВЫЕ ФУНКЦИИ ДЛЯ ПРОМОКОДОВ ==========
+async def admin_manage_promocodes_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    await safe_edit_message_text(
+        query=query,
+        text="🎟️ **Управление промокодами**\n\nВыберите действие:",
+        parse_mode='Markdown',
+        reply_markup=get_admin_promocodes_keyboard()
+    )
+
+async def admin_create_balance_promo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    await safe_edit_message_text(
+        query=query,
+        text="💰 **Создание денежного промокода**\n\nВведите сумму в USDT, которую получит пользователь:",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_promocodes")]
+        ])
+    )
+    context.user_data['awaiting_promo_balance_amount'] = True
+
+async def admin_create_item_promo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    products = get_promocodable_products()
+    if not products:
+        await safe_edit_message_text(
+            query=query,
+            text="❌ **Нет доступных товаров для создания промокода.**",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_promocodes")]
+            ])
+        )
+        return
+
+    keyboard = []
+    for p in products:
+        emoji = "📦" if p.get('is_bundle') else "📁"
+        btn_text = f"{emoji} {p['name']} – {p['price']} USDT"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"promo_select_item:{p['id']}")])
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_promocodes")])
+
+    await safe_edit_message_text(
+        query=query,
+        text="🎟️ **Создание товарного промокода**\n\nВыберите товар, который будет выдаваться по промокоду:",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def promo_select_item_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: str):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    product = next((p for p in catalog if p['id'] == product_id), None)
+    if not product:
+        await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
+        return
+
+    context.user_data['promo_item_product'] = product_id
+    await safe_edit_message_text(
+        query=query,
+        text=f"🎟️ **Выбран товар:** {product['name']}\n\nВведите код промокода (или оставьте пустым для автогенерации):",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_create_item_promo")]
+        ])
+    )
+    context.user_data['awaiting_promo_item_code'] = True
+
+async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return
+
+    if not promocodes:
+        await safe_edit_message_text(
+            query=query,
+            text="📭 **Нет созданных промокодов.**",
+            parse_mode='Markdown',
+            reply_markup=get_admin_promocodes_keyboard()
+        )
+        return
+
+    text = "🎟️ **Список промокодов:**\n\n"
+    for code, promo in promocodes.items():
+        status = "✅ Активен" if promo.get('active') else "❌ Использован"
+        type_ = "💵 Денежный" if promo['type'] == 'balance' else "🎁 Товарный"
+        value = promo['value']
+        if promo['type'] == 'balance':
+            value_str = f"{value} USDT"
+        else:
+            product = next((p for p in catalog if p['id'] == value), None)
+            value_str = product['name'] if product else "Товар удален"
+        created = promo.get('created_at', '')[:10]
+        used_by = promo.get('used_by', '—')
+        text += f"`{code}`\n"
+        text += f"   {type_}: {value_str}\n"
+        text += f"   {status}, создан {created}, использован: {used_by}\n\n"
+
+    text += f"📊 **Всего промокодов:** {len(promocodes)}"
+
+    await safe_edit_message_text(
+        query=query,
+        text=text,
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="admin_list_promocodes")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_promocodes")]
+        ])
+    )
+
+# ========== БЕЗОПАСНЫЕ ФУНКЦИИ ==========
 async def safe_answer_query(query, text=None, show_alert=False):
-    """Безопасная обработка ответа на callback_query"""
     try:
         await query.answer(text=text, show_alert=show_alert)
     except BadRequest as e:
@@ -4807,7 +4491,6 @@ async def safe_answer_query(query, text=None, show_alert=False):
         raise
 
 async def safe_edit_message_text(query, text, parse_mode=None, reply_markup=None, disable_web_page_preview=None):
-    """Безопасное редактирование сообщения"""
     try:
         await query.edit_message_text(
             text=text,
@@ -4825,120 +4508,95 @@ async def safe_edit_message_text(query, text, parse_mode=None, reply_markup=None
         raise
 
 # ========== ОБРАБОТЧИК INLINE КНОПОК ==========
-
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    
     try:
         await safe_answer_query(query)
     except Exception as e:
         logger.error(f"Ошибка при ответе на callback_query: {e}")
         return
-    
+
     data = query.data
     user_id = query.from_user.id
-    
     logger.info(f"Обработка callback_data: {data} от пользователя {user_id}")
-    
+
     try:
         # Основные пользовательские кнопки
         if data == "back_to_menu" or data == "back_to_main":
             await start(update, context)
             return
-        
         elif data == "catalog_menu":
             await catalog_handler(update, context)
             return
-        
         elif data == "personal_account":
             await personal_account_handler(update, context)
             return
-        
         elif data == "available_products":
             await available_products_handler(update, context)
             return
-        
         elif data == "support":
             await support_handler(update, context)
             return
-        
         elif data == "admin_panel":
             await admin_panel_handler(update, context)
             return
-        
         elif data == "back_to_categories":
             await catalog_handler(update, context)
             return
-        
         elif data == "deposit_menu":
             await deposit_handler(update, context)
             return
-        
         elif data == "deposit_crypto":
             await deposit_crypto_handler(update, context)
             return
-        
         elif data == "deposit_admin":
             await deposit_admin_handler(update, context)
             return
-        
         elif data == "deposit_admin_start":
             await deposit_admin_start_handler(update, context)
             return
-        
         elif data == "my_invoices":
             await invoices_handler(update, context)
             return
-        
         elif data == "my_purchases":
             await my_purchases_handler(update, context)
             return
-        
         elif data.startswith("purchases_page:"):
             page = int(data.split(":", 1)[1])
             await my_purchases_handler(update, context, page)
             return
-        
         elif data.startswith("show_purchase:"):
             purchase_id = data.split(":", 1)[1]
             await show_purchase_detail(update, context, purchase_id)
             return
-        
         elif data.startswith("download_purchase:"):
             purchase_id = data.split(":", 1)[1]
             await download_purchase_file(update, context, purchase_id)
             return
-        
         elif data == "cancel_invoices":
             await cancel_invoices_list_handler(update, context)
             return
-        
         elif data.startswith("cancel_invoice:"):
             invoice_id = data.split(":", 1)[1]
             await cancel_invoice_handler(update, context, invoice_id)
             return
-        
-        # Промокод
         elif data == "promo_code":
             await promo_code_handler(update, context)
             return
-        
-        # Категории и товары (из оригинального кода)
+
+        # Категории и товары
         elif data.startswith("category_"):
             category_name = data.split("_", 1)[1]
             await catalog_category_handler(update, context, category_name)
             return
-        
         elif data.startswith("category_types_"):
             category_name = data.split("_", 2)[2]
             await category_types_handler(update, context, category_name)
             return
-        
         elif data.startswith("cat_"):
             category_name = data.split("_", 1)[1]
             await subcategory_handler(update, context, category_name)
             return
-        
         elif data.startswith("subcategory_"):
             parts = data.split("_", 2)
             if len(parts) == 3:
@@ -4946,7 +4604,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_name = parts[2]
                 await catalog_subcategory_handler(update, context, category_name, subcategory_name)
             return
-        
         elif data.startswith("subcat_"):
             parts = data.split("_", 2)
             if len(parts) == 3:
@@ -4954,7 +4611,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_name = parts[2]
                 await catalog_subcategory_handler(update, context, category_name, subcategory_name)
             return
-        
         elif data.startswith("type_"):
             parts = data.split("_", 3)
             if len(parts) == 4:
@@ -4963,7 +4619,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 type_name = parts[3]
                 await catalog_type_handler(update, context, category_name, subcategory_name, type_name)
             return
-        
         elif data.startswith("type_no_subcat_"):
             parts = data.split("_", 3)
             if len(parts) == 4:
@@ -4971,17 +4626,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 type_name = parts[4]
                 await catalog_type_no_subcategory_handler(update, context, category_name, type_name)
             return
-        
         elif data.startswith("product:"):
             product_id = data.split(":", 1)[1]
             await show_product_details(update, context, product_id)
             return
-        
         elif data.startswith("product_back:"):
             product_id = data.split(":", 1)[1]
             await show_product_details(update, context, product_id)
             return
-        
         elif data.startswith("buy_qty:"):
             parts = data.split(":")
             if len(parts) == 3:
@@ -4989,24 +4641,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 quantity = int(parts[2])
                 await handle_quantity_selection(update, context, product_id, quantity)
             return
-        
         elif data.startswith("custom_qty:"):
             product_id = data.split(":", 1)[1]
-            
             await safe_edit_message_text(
                 query=query,
-                text=f"🔢 **Введите количество для покупки:**\n\n"
-                    f"Введите целое число (например: 3, 5, 10)\n"
-                    f"Или 'отмена' для возврата назад",
+                text="🔢 **Введите количество для покупки:**\n\n"
+                     "Введите целое число (например: 3, 5, 10)\n"
+                     "Или 'отмена' для возврата назад",
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Назад", callback_data=f"product:{product_id}")]
                 ])
             )
-            
             context.user_data['awaiting_custom_quantity'] = product_id
             return
-        
         elif data.startswith("confirm_purchase:"):
             parts = data.split(":")
             if len(parts) == 3:
@@ -5014,62 +4662,50 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 quantity = int(parts[2])
                 await process_purchase(update, context, product_id, quantity)
             return
-        
+
         # Админские кнопки
         if is_admin(user_id):
-            # Управление категориями и товарами (из оригинального кода)
+            # Управление категориями
             if data == "admin_create_product":
                 await admin_create_product_handler(update, context)
                 return
-            
             elif data == "admin_attach_file":
                 await admin_attach_file_handler(update, context)
                 return
-            
             elif data == "admin_manage_categories":
                 await admin_manage_categories_handler(update, context)
                 return
-            
             elif data == "admin_add_category":
                 await admin_add_category_handler(update, context)
                 return
-            
             elif data == "admin_add_subcategory":
                 await admin_add_subcategory_handler(update, context)
                 return
-            
             elif data == "admin_add_type_to_category":
                 await admin_add_type_to_category_handler(update, context)
                 return
-            
             elif data == "admin_add_type_to_subcategory":
                 await admin_add_type_to_subcategory_handler(update, context)
                 return
-            
             elif data == "admin_delete_subcategory":
                 await admin_delete_subcategory_handler(update, context)
                 return
-            
             elif data.startswith("select_category_for_subcat:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_subcategory_handler(update, context, category)
                 return
-            
             elif data.startswith("select_category_for_type:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_type_handler(update, context, category)
                 return
-            
             elif data.startswith("select_category_for_type_to_category:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_type_to_category_handler(update, context, category)
                 return
-            
             elif data.startswith("select_category_for_delete_subcat:"):
                 category = data.split(":", 1)[1]
                 await select_category_for_delete_subcat_handler(update, context, category)
                 return
-            
             elif data.startswith("select_subcategory_for_type:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -5077,7 +4713,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     subcategory = parts[2]
                     await select_subcategory_for_type_handler(update, context, category, subcategory)
                 return
-            
             elif data.startswith("select_subcategory_for_delete:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -5085,25 +4720,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     subcategory = parts[2]
                     await select_subcategory_for_delete_handler(update, context, category, subcategory)
                 return
-            
             elif data == "admin_view_structure":
                 await admin_view_structure_handler(update, context)
                 return
-            
             elif data == "admin_delete_category":
                 await admin_delete_category_handler(update, context)
                 return
-            
             elif data.startswith("confirm_delete_category:"):
                 category = data.split(":", 1)[1]
                 await confirm_delete_category_handler(update, context, category)
                 return
-            
             elif data.startswith("final_delete_category:"):
                 category = data.split(":", 1)[1]
                 await final_delete_category_handler(update, context, category)
                 return
-            
             elif data.startswith("final_delete_subcategory:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -5111,21 +4741,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     subcategory = parts[2]
                     await final_delete_subcategory_handler(update, context, category, subcategory)
                 return
-            
             elif data == "admin_bulk_upload_to_type":
                 await admin_bulk_upload_to_type_handler(update, context)
                 return
-            
             elif data.startswith("bulk_select_category:"):
                 category = data.split(":", 1)[1]
                 await bulk_select_category_handler(update, context, category)
                 return
-            
             elif data.startswith("bulk_category_types:"):
                 category = data.split(":", 1)[1]
                 await bulk_category_types_handler(update, context, category)
                 return
-            
             elif data.startswith("bulk_select_subcategory:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -5133,7 +4759,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     subcategory = parts[2]
                     await bulk_select_subcategory_handler(update, context, category, subcategory)
                 return
-            
             elif data.startswith("bulk_select_category_type:"):
                 parts = data.split(":", 2)
                 if len(parts) == 3:
@@ -5141,7 +4766,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     type_ = parts[2]
                     await bulk_select_category_type_handler(update, context, category, type_)
                 return
-            
             elif data.startswith("bulk_select_type:"):
                 parts = data.split(":", 3)
                 if len(parts) == 4:
@@ -5150,119 +4774,89 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     type_ = parts[3]
                     await bulk_select_type_handler(update, context, category, subcategory, type_)
                 return
-            
             elif data == "admin_restock":
                 await admin_restock_handler(update, context)
                 return
-            
             elif data == "admin_delete_product":
                 await admin_delete_product_handler(update, context)
                 return
-            
             elif data == "admin_add_balance":
                 await admin_add_balance_handler(update, context)
                 return
-            
             elif data == "admin_manage_admins":
                 await admin_manage_admins_handler(update, context)
                 return
-            
             elif data == "admin_add_admin":
                 await admin_add_admin_handler(update, context)
                 return
-            
             elif data == "admin_remove_admin":
                 await admin_remove_admin_handler(update, context)
                 return
-            
             elif data == "admin_list_admins":
                 await admin_list_admins_handler(update, context)
                 return
-            
             # Промокоды
             elif data == "admin_manage_promocodes":
                 await admin_manage_promocodes_handler(update, context)
                 return
-            
             elif data == "admin_create_balance_promo":
                 await admin_create_balance_promo_handler(update, context)
                 return
-            
             elif data == "admin_create_item_promo":
                 await admin_create_item_promo_handler(update, context)
                 return
-            
             elif data == "admin_list_promocodes":
                 await admin_list_promocodes_handler(update, context)
                 return
-            
             elif data.startswith("promo_select_item:"):
                 product_id = data.split(":", 1)[1]
                 await promo_select_item_handler(update, context, product_id)
                 return
-            
             # Заявки
             elif data == "admin_requests_list":
                 await admin_requests_list_handler(update, context)
                 return
-            
             elif data.startswith("view_request:"):
                 request_id = data.split(":", 1)[1]
                 await view_request_handler(update, context, request_id)
                 return
-            
             elif data.startswith("confirm_request:"):
                 request_id = data.split(":", 1)[1]
                 await confirm_request_handler(update, context, request_id)
                 return
-            
             elif data.startswith("reject_request:"):
                 request_id = data.split(":", 1)[1]
                 await reject_request_handler(update, context, request_id)
                 return
-            
-            elif data.startswith("remove_admin:"):
-                admin_id = int(data.split(":", 1)[1])
-                await removeadmin_command(update, context)
-                return
-            
             elif data == "back_to_admin":
                 await admin_panel_handler(update, context)
                 return
-            
             elif data.startswith("attach_to:"):
                 product_id = data.split(":", 1)[1]
-                
                 load_data()
-                
                 product = next((p for p in catalog if p['id'] == product_id), None)
-                
                 if product:
                     await safe_edit_message_text(
                         query=query,
                         text=f"📦 **Товар:** {product['name']}\n"
-                            f"🆔 **ID:** `{product_id}`\n"
-                            f"💰 **Цена:** {product['price']} USDT\n\n"
-                            f"📤 **Теперь отправьте .txt файл для этого товара:**",
+                             f"🆔 **ID:** `{product_id}`\n"
+                             f"💰 **Цена:** {product['price']} USDT\n\n"
+                             f"📤 **Теперь отправьте .txt файл для этого товара:**",
                         parse_mode='Markdown',
                         reply_markup=get_back_to_admin_keyboard()
                     )
-                    
                     context.user_data['awaiting_file_for_product'] = product_id
                 else:
                     await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
                 return
-            
             elif data.startswith("delete_product:"):
                 product_id = data.split(":", 1)[1]
                 await delete_product_handler(update, context, product_id)
                 return
-            
             elif data.startswith("restock:"):
                 product_id = data.split(":", 1)[1]
                 await restock_product_handler(update, context, product_id)
                 return
-            
             elif data == "no_products":
                 await safe_edit_message_text(
                     query=query,
@@ -5271,7 +4865,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=get_admin_keyboard()
                 )
                 return
-            
             elif data == "no_products_delete":
                 await safe_edit_message_text(
                     query=query,
@@ -5280,27 +4873,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=get_admin_keyboard()
                 )
                 return
-            
             elif data == "admin_crypto_stats":
                 try:
                     load_data()
-                    
                     stats_text = "👑 **CryptoBot Статистика**\n\n"
-                    
                     active_invoices = sum(1 for inv in invoices.values() if inv.get('status') == 'active')
                     paid_invoices = sum(1 for inv in invoices.values() if inv.get('status') == 'paid')
                     expired_invoices = sum(1 for inv in invoices.values() if inv.get('status') == 'expired')
-                    
                     total_usdt_amount = sum(inv.get('amount', 0) for inv in invoices.values() if inv.get('status') == 'paid')
-                    
                     stats_text += f"📊 **Счета:**\n"
                     stats_text += f"• Активные: {active_invoices}\n"
                     stats_text += f"• Оплаченные: {paid_invoices}\n"
                     stats_text += f"• Истекшие: {expired_invoices}\n\n"
-                    
                     stats_text += f"💰 **Общая сумма:**\n"
                     stats_text += f"• В USDT: {total_usdt_amount:.2f}"
-                    
                     await safe_edit_message_text(
                         query=query,
                         text=stats_text,
@@ -5310,7 +4896,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
                         ])
                     )
-                    
                 except Exception as e:
                     logger.error(f"Ошибка получения статистики CryptoBot: {e}")
                     await safe_edit_message_text(
@@ -5320,26 +4905,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=get_admin_keyboard()
                     )
                 return
-        
+
     except Exception as e:
         logger.error(f"Ошибка в обработчике кнопок: {e}")
         await safe_answer_query(query, "❌ Произошла ошибка", show_alert=True)
 
 # ========== ОБРАБОТЧИК СООБЩЕНИЙ ==========
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
-    
     logger.info(f"Получено сообщение от {user_id}: {text}")
-    
+
     update_user_info(
         user_id=user_id,
         username=update.effective_user.username,
         first_name=update.effective_user.first_name
     )
-    
-    # Проверка на отмену в любом состоянии
+
     if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
         for key in list(context.user_data.keys()):
             if key.startswith('awaiting_'):
@@ -5349,8 +4931,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_inline_keyboard(user_id)
         )
         return
-    
-    # Обработка ввода промокода
+
+    # Промокод
     if context.user_data.get('awaiting_promo_code'):
         success, msg = await activate_promocode(user_id, text, context)
         await update.message.reply_text(
@@ -5360,7 +4942,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         del context.user_data['awaiting_promo_code']
         return
-    
+
     # Админ: создание денежного промокода
     if context.user_data.get('awaiting_promo_balance_amount') and is_admin(user_id):
         try:
@@ -5368,7 +4950,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if amount <= 0:
                 await update.message.reply_text("❌ Сумма должна быть больше 0.")
                 return
-            # Запрашиваем код
             context.user_data['promo_balance_amount'] = amount
             context.user_data['awaiting_promo_balance_code'] = True
             del context.user_data['awaiting_promo_balance_amount']
@@ -5381,7 +4962,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Неверный формат суммы. Введите число.")
         return
-    
+
     if context.user_data.get('awaiting_promo_balance_code') and is_admin(user_id):
         code = text.strip().upper()
         if not code:
@@ -5404,7 +4985,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_admin_promocodes_keyboard()
         )
         return
-    
+
     # Админ: ввод кода для товарного промокода
     if context.user_data.get('awaiting_promo_item_code') and is_admin(user_id):
         code = text.strip().upper()
@@ -5430,8 +5011,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_admin_promocodes_keyboard()
         )
         return
-    
-    # Обработка ввода суммы в рублях для заявки
+
+    # Заявка: ввод суммы в рублях
     if context.user_data.get('awaiting_rub_amount'):
         try:
             rub_amount = float(text.replace(',', '.'))
@@ -5441,102 +5022,78 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if rub_amount > 1000000:
                 await update.message.reply_text("❌ Слишком большая сумма. Максимум 1 000 000 руб.")
                 return
-            
             await process_rub_amount(update, context, rub_amount)
         except ValueError:
             await update.message.reply_text("❌ Неверный формат суммы. Введите число (например: 500).")
         return
-    
-    # Далее остальные обработчики из исходного кода (создание товара, пополнение USDT и т.д.)
+
+    # Пополнение USDT
     if context.user_data.get('awaiting_usdt_amount'):
         if text.lower() in ['назад', 'back', 'отмена', 'cancel', '🔙 назад']:
             if 'awaiting_usdt_amount' in context.user_data:
                 del context.user_data['awaiting_usdt_amount']
-            
             await update.message.reply_text(
-                "❌ **Ввод суммы отменен.**\n\n"
-                "Возвращаюсь к выбору способа оплаты...",
+                "❌ **Ввод суммы отменен.**\n\nВозвращаюсь к выбору способа оплаты...",
                 parse_mode='Markdown',
                 reply_markup=get_payment_methods_keyboard()
             )
             return
-        
+
         try:
             amount = float(text.replace(',', '.'))
-            
             if amount < 1:
                 await update.message.reply_text(
-                    "❌ **Минимальная сумма: 1 USDT**\n\n"
-                    "Введите сумму больше или равную 1 USDT\n"
-                    "Или нажмите '🔙 Назад' для отмены",
+                    "❌ **Минимальная сумма: 1 USDT**\n\nВведите сумму больше или равную 1 USDT\nИли нажмите '🔙 Назад' для отмены",
                     parse_mode='Markdown',
                     reply_markup=get_deposit_crypto_keyboard()
                 )
                 return
             if amount > 1000:
                 await update.message.reply_text(
-                    "❌ **Максимальная сумма: 1000 USDT**\n\n"
-                    "Введите сумму меньше или равную 1000 USDT\n"
-                    "Или нажмите '🔙 Назад' для отмены",
+                    "❌ **Максимальная сумма: 1000 USDT**\n\nВведите сумму меньше или равную 1000 USDT\nИли нажмите '🔙 Назад' для отмены",
                     parse_mode='Markdown',
                     reply_markup=get_deposit_crypto_keyboard()
                 )
                 return
-            
             await create_usdt_invoice(update, context, amount)
-            
             if 'awaiting_usdt_amount' in context.user_data:
                 del context.user_data['awaiting_usdt_amount']
-            
         except ValueError:
             await update.message.reply_text(
-                "❌ **Неверный формат суммы!**\n\n"
-                "Пожалуйста, введите число (например: 10.5)\n"
-                "Можно использовать точку или запятую как разделитель\n\n"
-                "Или нажмите '🔙 Назад' для отмены",
+                "❌ **Неверный формат суммы!**\n\nПожалуйста, введите число (например: 10.5)\nМожно использовать точку или запятую как разделитель\n\nИли нажмите '🔙 Назад' для отмены",
                 parse_mode='Markdown',
                 reply_markup=get_deposit_crypto_keyboard()
             )
         return
-    
+
     elif context.user_data.get('awaiting_product_data') and is_admin(user_id):
         await process_product_creation(update, context, text)
         return
-    
     elif context.user_data.get('awaiting_admin_add_balance') and is_admin(user_id):
         await process_admin_add_balance(update, context, text)
         return
-    
     elif context.user_data.get('awaiting_admin_id') and is_bot_owner(user_id):
         action = context.user_data['awaiting_admin_id']
-        
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_admin_id']
             await admin_manage_admins_handler(update, context)
             return
-        
         try:
             new_admin_id = int(text)
-            
             if action == 'add':
                 if new_admin_id in admins:
                     await update.message.reply_text("❌ Этот пользователь уже является администратором")
                     return
-                
                 if add_admin(new_admin_id):
                     await update.message.reply_text(
-                        f"✅ **Пользователь {new_admin_id} добавлен в администраторы!**\n\n"
-                        f"Теперь он имеет доступ к админ-панели.",
+                        f"✅ **Пользователь {new_admin_id} добавлен в администраторы!**\n\nТеперь он имеет доступ к админ-панели.",
                         parse_mode='Markdown',
                         reply_markup=get_admin_management_keyboard()
                     )
-                    
                     try:
                         await context.bot.send_message(
                             chat_id=new_admin_id,
-                            text=f"👑 **Вы стали администратором бота!**\n\n"
-                                 f"Владелец бота назначил вас администратором.\n"
-                                 f"Используйте команду /admin для доступа к панели управления.",
+                            text=f"👑 **Вы стали администратором бота!**\n\nВладелец бота назначил вас администратором.\nИспользуйте команду /admin для доступа к панели управления.",
                             parse_mode='Markdown',
                             reply_markup=get_main_inline_keyboard(new_admin_id)
                         )
@@ -5544,21 +5101,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.error(f"Не удалось уведомить пользователя {new_admin_id}: {e}")
                 else:
                     await update.message.reply_text("❌ Ошибка добавления администратора")
-            
             elif action == 'remove':
                 if new_admin_id == BOT_OWNER_ID:
                     await update.message.reply_text("❌ Нельзя удалить владельца бота")
                     return
-                
                 if new_admin_id not in admins:
                     await update.message.reply_text("❌ Этот пользователь не является администратором")
                     return
-                
                 if remove_admin(new_admin_id):
                     admin_info = users.get(str(new_admin_id), {})
                     username = admin_info.get('username', 'unknown')
                     first_name = admin_info.get('first_name', 'User')
-                    
                     await update.message.reply_text(
                         f"✅ **Администратор {first_name} удален!**\n\n"
                         f"👤 **Имя:** {first_name}\n"
@@ -5568,12 +5121,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode='Markdown',
                         reply_markup=get_admin_management_keyboard()
                     )
-                    
                     try:
                         await context.bot.send_message(
                             chat_id=new_admin_id,
-                            text=f"👑 **Вы больше не администратор бота.**\n\n"
-                                 f"Владелец бота снял с вас права администратора.",
+                            text=f"👑 **Вы больше не администратор бота.**\n\nВладелец бота снял с вас права администратора.",
                             parse_mode='Markdown',
                             reply_markup=get_main_inline_keyboard(new_admin_id)
                         )
@@ -5581,35 +5132,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.error(f"Не удалось уведомить пользователя {new_admin_id}: {e}")
                 else:
                     await update.message.reply_text("❌ Ошибка удаления администратора")
-            
             del context.user_data['awaiting_admin_id']
-            
         except ValueError:
             await update.message.reply_text("❌ Неверный формат ID. ID должен быть числом")
         return
-    
-    # Создание категории с placeholder-товаром
     elif context.user_data.get('awaiting_category_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_category_name']
             await admin_manage_categories_handler(update, context)
             return
-        
         category_name = text.strip()
-        
         if len(category_name) < 2:
             await update.message.reply_text("❌ Название категории слишком короткое! Минимум 2 символа.")
             return
-        
         categories = get_categories()
         if category_name in categories:
             await update.message.reply_text(f"❌ Категория '{category_name}' уже существует!")
             return
-        
         placeholder = create_placeholder_product(category=category_name)
         catalog.append(placeholder)
         save_catalog()
-        
         await update.message.reply_text(
             f"✅ **Категория '{category_name}' успешно создана!**\n\n"
             f"📁 **Название:** {category_name}\n\n"
@@ -5617,33 +5159,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
         )
-        
         del context.user_data['awaiting_category_name']
         return
-    
-    # Создание подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_subcategory_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_subcategory_name']
             await admin_manage_categories_handler(update, context)
             return
-        
         subcategory_name = text.strip()
         category = context.user_data['awaiting_subcategory_name']
-        
         if len(subcategory_name) < 2:
             await update.message.reply_text("❌ Название подкатегории слишком короткое! Минимум 2 символа.")
             return
-        
         subcategories = get_subcategories(category)
         if subcategory_name in subcategories:
             await update.message.reply_text(f"❌ Подкатегория '{subcategory_name}' уже существует в категории '{category}'!")
             return
-        
         placeholder = create_placeholder_product(category=category, subcategory=subcategory_name)
         catalog.append(placeholder)
         save_catalog()
-        
         await update.message.reply_text(
             f"✅ **Подкатегория '{subcategory_name}' успешно создана!**\n\n"
             f"📁 **Категория:** {category}\n"
@@ -5652,34 +5186,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
         )
-        
         del context.user_data['awaiting_subcategory_name']
         return
-    
-    # Создание типа в категории (без подкатегории) с placeholder-товаром
     elif context.user_data.get('awaiting_type_to_category') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_to_category']
             await admin_manage_categories_handler(update, context)
             return
-        
         type_name = text.strip()
         type_data = context.user_data['awaiting_type_to_category']
         category = type_data['category']
-        
         if len(type_name) < 2:
             await update.message.reply_text("❌ Название типа слишком короткое! Минимум 2 символа.")
             return
-        
         category_types = get_types(category, None)
         if type_name in category_types:
             await update.message.reply_text(f"❌ Тип '{type_name}' уже существует в категории '{category}' (без подкатегории)!")
             return
-        
         placeholder = create_placeholder_product(category=category, type_=type_name)
         catalog.append(placeholder)
         save_catalog()
-        
         await update.message.reply_text(
             f"✅ **Тип '{type_name}' успешно создан в категории '{category}' (без подкатегории)!**\n\n"
             f"📁 **Категория:** {category}\n"
@@ -5688,35 +5214,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
         )
-        
         del context.user_data['awaiting_type_to_category']
         return
-    
-    # Создание типа в подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_type_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_name']
             await admin_manage_categories_handler(update, context)
             return
-        
         type_name = text.strip()
         type_data = context.user_data['awaiting_type_name']
         category = type_data['category']
         subcategory = type_data['subcategory']
-        
         if len(type_name) < 2:
             await update.message.reply_text("❌ Название типа слишком короткое! Минимум 2 символа.")
             return
-        
         types = get_types(category, subcategory)
         if type_name in types:
             await update.message.reply_text(f"❌ Тип '{type_name}' уже существует в подкатегории '{subcategory}'!")
             return
-        
         placeholder = create_placeholder_product(category=category, subcategory=subcategory, type_=type_name)
         catalog.append(placeholder)
         save_catalog()
-        
         await update.message.reply_text(
             f"✅ **Тип '{type_name}' успешно создан!**\n\n"
             f"📁 **Категория:** {category}\n"
@@ -5726,32 +5244,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
         )
-        
         del context.user_data['awaiting_type_name']
         return
-    
     elif context.user_data.get('awaiting_delete_category') and is_admin(user_id):
         category = context.user_data['awaiting_delete_category']
-        
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_delete_category']
             await admin_manage_categories_handler(update, context)
             return
-        
         confirmation_text = f"ДА, УДАЛИТЬ {category}"
-        
         if text.upper() != confirmation_text:
             await update.message.reply_text(
-                f"❌ **Текст подтверждения не совпадает!**\n\n"
-                f"Введите точно: `{confirmation_text}`\n"
-                f"Или 'отмена' для отмены",
+                f"❌ **Текст подтверждения не совпадает!**\n\nВведите точно: `{confirmation_text}`\nИли 'отмена' для отмены",
                 parse_mode='Markdown'
             )
             return
-        
         products_to_delete = get_products_by_path(category)
         deleted_count = 0
-        
         for product in products_to_delete:
             if product.get('has_file') and product.get('file_path'):
                 try:
@@ -5760,12 +5269,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         os.remove(file_path)
                 except Exception as e:
                     logger.error(f"Ошибка удаления файла {product['file_path']}: {e}")
-            
             catalog[:] = [p for p in catalog if p['id'] != product['id']]
             deleted_count += 1
-        
         save_catalog()
-        
         await update.message.reply_text(
             f"✅ **Категория '{category}' успешно удалена!**\n\n"
             f"📊 **Удалено:**\n"
@@ -5775,32 +5281,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
         )
-        
         del context.user_data['awaiting_delete_category']
         return
-    
     elif context.user_data.get('awaiting_bulk_upload_params') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_bulk_upload_params']
             await admin_manage_categories_handler(update, context)
             return
-        
         try:
             parts = text.split('|')
             if len(parts) < 2:
                 await update.message.reply_text(
-                    "❌ **Неверный формат!**\n\n"
-                    "Нужно 2 параметра через символ |\n"
-                    "Формат: Цена_USDT|Описание\n\n"
-                    "**Пример:**\n"
-                    "`1.11|Аккаунт Wildberries`",
+                    "❌ **Неверный формат!**\n\nНужно 2 параметра через символ |\nФормат: Цена_USDT|Описание\n\n**Пример:**\n`1.11|Аккаунт Wildberries`",
                     parse_mode='Markdown'
                 )
                 return
-            
             price_str = parts[0].strip()
             description = '|'.join(parts[1:]).strip()
-
             try:
                 price = float(price_str.replace(',', '.'))
                 if price <= 0:
@@ -5809,11 +5306,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
                 return
-
             params = context.user_data['awaiting_bulk_upload_params']
             params['price'] = price
             params['description'] = description
-
             text_msg = f"✅ **Параметры установлены!**\n\n"
             text_msg += f"📁 **Категория:** {params['category']}\n"
             if params.get('subcategory'):
@@ -5824,7 +5319,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text_msg += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
             text_msg += "Каждый файл будет добавлен в набор для этого типа.\n\n"
             text_msg += "Для завершения нажмите '🔙 В админку'"
-
             await update.message.reply_text(
                 text_msg,
                 parse_mode='Markdown',
@@ -5839,33 +5333,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
         return
-    
     elif context.user_data.get('awaiting_restock') and is_admin(user_id):
         try:
             new_quantity = int(text)
             if new_quantity < 0:
                 await update.message.reply_text("❌ Количество не может быть отрицательным")
                 return
-            
             restock_data = context.user_data['awaiting_restock']
             product_id = restock_data['product_id']
             product_name = restock_data['product_name']
-            
             product = next((p for p in catalog if p['id'] == product_id), None)
-            
             if product:
                 old_quantity = product.get('quantity', 0)
                 product['quantity'] = new_quantity
-                
                 if new_quantity > 0 and product.get('sold'):
                     product['sold'] = False
                     if 'sold_to' in product:
                         del product['sold_to']
                     if 'sold_at' in product:
                         del product['sold_at']
-                
                 save_catalog()
-                
                 await update.message.reply_text(
                     f"✅ **Количество товара обновлено!**\n\n"
                     f"🛍️ **Товар:** {product_name}\n"
@@ -5877,35 +5364,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 await update.message.reply_text("❌ Товар не найден")
-            
             if 'awaiting_restock' in context.user_data:
                 del context.user_data['awaiting_restock']
-                
         except ValueError:
             await update.message.reply_text("❌ Введите целое число (например: 10)")
         return
-    
     elif context.user_data.get('awaiting_custom_quantity'):
         product_id = context.user_data['awaiting_custom_quantity']
-        
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_custom_quantity']
             await show_product_details(update, context, product_id)
             return
-        
         try:
             quantity = int(text)
             if quantity <= 0:
                 await update.message.reply_text("❌ Количество должно быть больше 0")
                 return
-            
             await handle_quantity_selection(update, context, product_id, quantity)
             del context.user_data['awaiting_custom_quantity']
-            
         except ValueError:
             await update.message.reply_text("❌ Пожалуйста, введите целое число (например: 3, 5, 10)")
         return
-    
+
     await update.message.reply_text(
         "🤖 **Используйте кнопки меню для навигации**",
         parse_mode='Markdown',
@@ -5913,17 +5393,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ========== ОБРАБОТЧИК ДОКУМЕНТОВ ==========
-
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     if not is_admin(user_id):
         return
-    
     await handle_document_for_product(update, context)
 
 # ========== ГЛАВНАЯ ФУНКЦИЯ ==========
-
 def main():
     print("=" * 50)
     print("🤖 ЗАПУСК БОТА С CRYPTOBOT, ИЕРАРХИЧЕСКИМИ КАТЕГОРИЯМИ, ПРОМОКОДАМИ И ЗАЯВКАМИ")
@@ -5937,21 +5413,20 @@ def main():
     print("📋 **ЗАЯВКИ НА ПОПОЛНЕНИЕ:** Пополнение через администратора с подтверждением")
     print("⚡ **ОПТИМИЗАЦИЯ:** Кэширование данных, атомарная запись файлов")
     print("=" * 50)
-    
+
     load_data()
-    
+
     if CRYPTO_BOT_TOKEN == "528185:AAxnCLhKJKxLQgsPxsK0xPkm3pQ61kdwRL3":
         print("⚠️ ВНИМАНИЕ: Используется тестовый токен CryptoBot!")
-    
+
     available_products = get_available_products()
     file_products = [p for p in available_products if p.get('has_file')]
     regular_products = [p for p in available_products if not p.get('has_file')]
     bundle_products = [p for p in available_products if p.get('is_bundle', False)]
-    
+
     categories = get_categories()
-    
     total_quantity = sum(p.get('quantity', 0) for p in catalog if not p.get('sold', False))
-    
+
     total_bundle_files = 0
     available_bundle_files = 0
     for product in catalog:
@@ -5959,7 +5434,7 @@ def main():
             bundle_files = product.get('bundle_files', [])
             total_bundle_files += len(bundle_files)
             available_bundle_files += get_available_files_count(bundle_files)
-    
+
     print(f"📊 **СИСТЕМНАЯ СТАТИСТИКА:**")
     print(f"• Пользователей: {len(users)}")
     print(f"• Товаров в каталоге: {len(catalog)}")
@@ -5972,24 +5447,24 @@ def main():
     print(f"• Промокодов: {len(promocodes)}")
     print(f"• Заявок: {len(requests_dict)}")
     print("=" * 50)
-    
+
     application = Application.builder().token(TOKEN).build()
-    
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", myid_command))
     application.add_handler(CommandHandler("addadmin", addadmin_command))
     application.add_handler(CommandHandler("removeadmin", removeadmin_command))
-    
+
     application.add_handler(CallbackQueryHandler(button_callback))
-    
+
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
+
     print("✅ Бот успешно инициализирован!")
     print("⏳ Запускаю бота...")
     print("=" * 50)
-    
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
