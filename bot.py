@@ -638,6 +638,7 @@ def get_admin_keyboard():
         [InlineKeyboardButton("📈 Пополнить количество", callback_data="admin_restock")],
         [InlineKeyboardButton("🗑️ Удалить товар", callback_data="admin_delete_product")],
         [InlineKeyboardButton("💰 Пополнить баланс (админ)", callback_data="admin_add_balance")],
+        [InlineKeyboardButton("💰 Списать баланс (админ)", callback_data="admin_remove_balance")],  # НОВАЯ КНОПКА
         [InlineKeyboardButton("📊 CryptoBot Статистика", callback_data="admin_crypto_stats")],
         [InlineKeyboardButton("👥 Управление администраторами", callback_data="admin_manage_admins")],
         [InlineKeyboardButton("🎟️ Управление промокодами", callback_data="admin_manage_promocodes")],
@@ -922,7 +923,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'awaiting_subcategory_name', 'awaiting_type_name', 'awaiting_delete_category',
         'awaiting_custom_quantity', 'awaiting_admin_id', 'awaiting_type_to_category',
         'awaiting_promo_code', 'awaiting_rub_amount', 'awaiting_request_id',
-        'awaiting_preorder_quantity', 'awaiting_preorder_data'
+        'awaiting_preorder_quantity', 'awaiting_preorder_data', 'awaiting_admin_remove_balance'  # добавлено
     ]
     for key in states_to_clear:
         if key in context.user_data:
@@ -2587,6 +2588,10 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
 
     user_data = ensure_user_registered(user_id)
 
+    # Проверка, что пользователь ещё не активировал этот промокод
+    if 'used_by' in promo and user_id in promo['used_by']:
+        return False, "❌ Вы уже активировали этот промокод."
+
     if promo['type'] == 'balance':
         amount = promo['value']
         user_data['balance_usdt'] = user_data.get('balance_usdt', 0.0) + amount
@@ -2775,6 +2780,86 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode='Markdown',
         reply_markup=get_admin_keyboard()
     )
+
+# ========== НОВАЯ АДМИН ФУНКЦИЯ: СПИСАНИЕ БАЛАНСА ==========
+async def admin_remove_balance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await safe_answer_query(query)
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+
+    await safe_edit_message_text(
+        query=query,
+        text="💰 **Списание баланса пользователя (Админ)**\n\n"
+             "Введите данные в формате:\n"
+             "`USER_ID СУММА_USDT`\n\n"
+             "**Пример:**\n"
+             "`8133517773 5.0`\n\n"
+             "⚠️ **Внимание:** сумма будет списана с баланса пользователя.",
+        parse_mode='Markdown',
+        reply_markup=get_back_to_admin_keyboard()
+    )
+    context.user_data['awaiting_admin_remove_balance'] = True
+
+async def process_admin_remove_balance(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    try:
+        parts = text.split()
+        if len(parts) != 2:
+            await update.message.reply_text(
+                "❌ **Неверный формат!**\n\nИспользуйте: `USER_ID СУММА_USDT`",
+                parse_mode='Markdown'
+            )
+            return
+        target_user_id = int(parts[0])
+        amount = float(parts[1])
+        if amount <= 0:
+            await update.message.reply_text("❌ Сумма должна быть больше 0")
+            return
+        target_user_data = ensure_user_registered(target_user_id)
+        old_balance = target_user_data.get('balance_usdt', 0.0)
+        if old_balance < amount:
+            await update.message.reply_text(
+                f"❌ Недостаточно средств у пользователя! Баланс: {old_balance:.2f} USDT, требуется списать: {amount:.2f} USDT"
+            )
+            return
+        target_user_data['balance_usdt'] = old_balance - amount
+        save_users()
+
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    f"💰 **С вашего баланса списано администратором!**\n\n"
+                    f"📉 **Списано:** {amount:.2f} USDT\n"
+                    f"💵 **Новый баланс:** {target_user_data['balance_usdt']:.2f} USDT\n\n"
+                    f"По вопросам обратитесь к администратору @{ADMIN_USERNAME}."
+                ),
+                parse_mode='Markdown',
+                reply_markup=get_main_inline_keyboard(target_user_id)
+            )
+        except Exception as e:
+            logger.error(f"Не удалось уведомить пользователя {target_user_id}: {e}")
+
+        await update.message.reply_text(
+            f"✅ **Баланс пользователя {target_user_id} уменьшен!**\n\n"
+            f"📉 **Списано:** {amount:.2f} USDT\n"
+            f"💵 **Новый баланс:** {target_user_data['balance_usdt']:.2f} USDT",
+            parse_mode='Markdown',
+            reply_markup=get_admin_keyboard()
+        )
+
+        if 'awaiting_admin_remove_balance' in context.user_data:
+            del context.user_data['awaiting_admin_remove_balance']
+    except ValueError:
+        await update.message.reply_text(
+            "❌ **Ошибка!**\n\nUSER_ID должен быть числом\nСУММА_USDT должна быть числом",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"Ошибка списания баланса админом: {e}")
+        await update.message.reply_text(f"❌ Ошибка: {str(e)}")
 
 # ========== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ==========
 async def admin_manage_categories_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4530,10 +4615,20 @@ async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DE
             product = next((p for p in catalog if p['id'] == value), None)
             value_str = product['name'] if product else "Товар удален"
         created = promo.get('created_at', '')[:10]
-        used_by = promo.get('used_by', '—')
+        used_by = promo.get('used_by', [])
+        used_at = promo.get('used_at', [])
+        used_info = ""
+        if used_by:
+            used_info = "\n   Использовали:"
+            for uid, at in zip(used_by, used_at):
+                username = users.get(str(uid), {}).get('username', 'unknown')
+                used_info += f"\n      • {at[:10]} – @{username} (ID: `{uid}`)"
         text += f"`{code}`\n"
         text += f"   {type_}: {value_str}\n"
-        text += f"   {status}, создан {created}, использован: {used_by}\n\n"
+        text += f"   {status}, создан {created}, активаций: {len(used_by)}/{promo.get('max_uses', 0) if promo.get('max_uses', 0) > 0 else '∞'}"
+        if used_info:
+            text += used_info
+        text += "\n\n"
 
     text += f"📊 **Всего промокодов:** {len(promocodes)}"
 
@@ -5398,6 +5493,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif data == "admin_add_balance":
                 await admin_add_balance_handler(update, context)
                 return
+            elif data == "admin_remove_balance":  # НОВАЯ КНОПКА
+                await admin_remove_balance_handler(update, context)
+                return
             elif data == "admin_manage_admins":
                 await admin_manage_admins_handler(update, context)
                 return
@@ -5766,6 +5864,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif context.user_data.get('awaiting_admin_add_balance') and is_admin(user_id):
         await process_admin_add_balance(update, context, text)
         return
+    elif context.user_data.get('awaiting_admin_remove_balance') and is_admin(user_id):  # НОВОЕ
+        await process_admin_remove_balance(update, context, text)
+        return
     elif context.user_data.get('awaiting_admin_id') and is_bot_owner(user_id):
         action = context.user_data['awaiting_admin_id']
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
@@ -6103,9 +6204,10 @@ def main():
     print("📦 **МАССОВАЯ ЗАГРУЗКА:** Загрузка файлов в конкретный тип")
     print("🛡️ **УПРАВЛЕНИЕ КАТЕГОРИЯМИ:** Добавление/удаление категорий, подкатегорий, типов")
     print("🛍️ **МОИ ПОКУПКИ:** Раздел для просмотра купленных товаров")
-    print("🎟️ **ПРОМОКОДЫ:** Денежные и товарные промокоды с лимитами")
+    print("🎟️ **ПРОМОКОДЫ:** Денежные и товарные промокоды с лимитами и защитой от повторного использования")
     print("📋 **ЗАЯВКИ НА ПОПОЛНЕНИЕ:** Пополнение через администратора с подтверждением")
     print("📦 **ПРЕДЗАКАЗЫ:** Возможность оформить предзаказ с оплатой и вводом данных")
+    print("💰 **НОВОЕ:** Команда списания баланса в админ-панели")
     print("⚡ **ОПТИМИЗАЦИЯ:** Кэширование данных, атомарная запись файлов")
     print("=" * 50)
 
