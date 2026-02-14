@@ -592,7 +592,7 @@ def get_category_types_keyboard(category: str):
     types = get_types(category, None)
     keyboard = []
     for type_ in types:
-        keyboard.append([InlineKeyboardButton(f"📝 {type_}", callback_data=f"type_no_subcat_{category}_{type_}")])
+        keyboard.append([InlineKeyboardButton(f"📝 {type_}", callback_data=f"type_no_subcat_{category}_{type_}_")])
     has_no_type = any(
         p for p in get_available_products()
         if p.get('category') == category and not p.get('type')
@@ -2159,11 +2159,8 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = query.from_user.id
     user_data = ensure_user_registered(user_id)
 
-    if not is_product_available(selected_product):
-        logger.warning(f"Товар {selected_product['id']} недоступен")
-        # Позволяем предзаказ даже если товар недоступен
-        # await safe_answer_query(query, "❌ Товар временно недоступен!", show_alert=True)
-        # return
+    # Проверяем доступность товара
+    product_available = is_product_available(selected_product)
 
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
     product_text = f"{emoji} **{selected_product['name']}**\n\n"
@@ -2190,23 +2187,26 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard = []
 
     # Если товар доступен для покупки, добавляем кнопку выбора количества
-    if is_product_available(selected_product):
-        if price_per_item > 0:
-            max_affordable = int(user_balance // price_per_item)
-        else:
-            max_affordable = 0
-
+    if product_available:
         if selected_product.get('is_bundle', False):
             max_available = get_available_files_count(selected_product.get('bundle_files', []))
         else:
             max_available = selected_product.get('quantity', 1)
+        
+        if max_available > 0:
+            if price_per_item > 0:
+                max_affordable = int(user_balance // price_per_item)
+            else:
+                max_affordable = 0
 
-        max_quantity = min(max_available, max_affordable)
+            max_quantity = min(max_available, max_affordable)
 
-        if max_quantity > 0:
-            keyboard.append([InlineKeyboardButton("🛒 Купить", callback_data=f"buy_product:{product_id}")])
+            if max_quantity > 0:
+                keyboard.append([InlineKeyboardButton("🛒 Купить", callback_data=f"buy_product:{product_id}")])
+            else:
+                product_text += f"\n\n⚠️ **Недостаточно средств для покупки!**"
         else:
-            product_text += f"\n\n⚠️ **Недостаточно средств для покупки!**"
+            product_text += f"\n\n⚠️ **Товар временно отсутствует в наличии!**"
     else:
         product_text += f"\n\n⚠️ **Товар временно отсутствует в наличии, но можно оформить предзаказ.**"
 
@@ -5117,6 +5117,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data == "back_to_categories":
             await catalog_handler(update, context)
             return
+        elif data == "back_to_catalog":
+            await catalog_handler(update, context)
+            return
         elif data == "deposit_menu":
             await deposit_handler(update, context)
             return
@@ -5195,7 +5198,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif data.startswith("type_no_subcat_"):
             parts = data.split("_", 3)
-            if len(parts) == 4:
+            if len(parts) == 5:
                 category_name = parts[3]
                 type_name = parts[4]
                 await catalog_type_no_subcategory_handler(update, context, category_name, type_name)
@@ -5207,6 +5210,31 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif data.startswith("product_back:"):
             product_id = data.split(":", 1)[1]
             await show_product_details(update, context, product_id)
+            return
+        elif data.startswith("buy_product:"):
+            product_id = data.split(":", 1)[1]
+            # Если нажата кнопка "Купить", запрашиваем количество
+            load_data()
+            product = next((p for p in catalog if p['id'] == product_id), None)
+            if product:
+                if product.get('is_bundle', False):
+                    max_qty = get_available_files_count(product.get('bundle_files', []))
+                else:
+                    max_qty = product.get('quantity', 1)
+                if max_qty <= 0:
+                    await safe_answer_query(query, "❌ Товар временно отсутствует!", show_alert=True)
+                    return
+                await safe_edit_message_text(
+                    query=query,
+                    text=f"🛒 **Выберите количество для покупки**\n\n"
+                         f"Товар: {product['name']}\n"
+                         f"Цена за единицу: {product['price']} USDT\n"
+                         f"Доступно: {max_qty}",
+                    parse_mode='Markdown',
+                    reply_markup=get_quantity_selection_keyboard(product_id, max_qty)
+                )
+            else:
+                await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
             return
         elif data.startswith("buy_qty:"):
             parts = data.split(":")
