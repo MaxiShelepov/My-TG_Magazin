@@ -434,7 +434,7 @@ def remove_admin(user_id: int) -> bool:
 
 # ========== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ТОВАРАМИ ==========
 
-# ИЗМЕНЕНИЕ: функция для создания placeholder-товара
+# ИСПРАВЛЕНО: добавлена функция создания placeholder-товара
 def create_placeholder_product(category: str, subcategory: str = "", type_: str = "") -> dict:
     """Создаёт служебный товар, чтобы категория/подкатегория/тип существовали в каталоге."""
     return {
@@ -455,7 +455,7 @@ def create_placeholder_product(category: str, subcategory: str = "", type_: str 
 
 def is_product_available(product) -> bool:
     """Оптимизированная проверка доступности товара с кэшированием"""
-    # ИЗМЕНЕНИЕ: исключаем служебные товары
+    # ИСПРАВЛЕНО: исключаем служебные товары
     if product.get('is_placeholder', False):
         return False
 
@@ -2968,6 +2968,45 @@ async def admin_add_type_to_category_handler(update: Update, context: ContextTyp
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def admin_add_type_to_subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Добавление типа в подкатегорию"""
+    query = update.callback_query
+    await safe_answer_query(query)
+    
+    user_id = query.from_user.id
+    
+    if not is_admin(user_id):
+        await safe_answer_query(query, "❌ Нет доступа", show_alert=True)
+        return
+    
+    categories = get_categories()
+    
+    if not categories:
+        await safe_edit_message_text(
+            query=query,
+            text="❌ **Нет категорий!**\n\n"
+                "Сначала создайте категорию.",
+            parse_mode='Markdown',
+            reply_markup=get_back_to_categories_keyboard()
+        )
+        return
+    
+    keyboard = []
+    for category in categories:
+        keyboard.append([InlineKeyboardButton(f"📁 {category} ▶", callback_data=f"select_category_for_type:{category}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_categories")])
+    
+    await safe_edit_message_text(
+        query=query,
+        text="📝 **Создание типа в подкатегории**\n\n"
+            "Типы, созданные этим способом, будут привязаны к конкретной подкатегории.\n"
+            "Покупатели будут видеть их в меню подкатегории.\n\n"
+            "Выберите категорию:",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 async def select_category_for_type_to_category_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     """Обработчик выбора категории для добавления типа (без подкатегории)"""
     query = update.callback_query
@@ -3894,11 +3933,14 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             
             available_files = get_available_files_count(bundle_files)
             
+            # ИСПРАВЛЕНО: вынесли условную строку в отдельную переменную
+            subcategory_line = f"📂 Подкатегория: {subcategory}\n" if subcategory else ""
+            
             await update.message.reply_text(
                 f"✅ **Файл '{document.file_name}' добавлен в существующий набор!**\n\n"
                 f"📦 **Набор:** {existing_bundle['name']}\n"
                 f"📁 **Категория:** {category}\n"
-                f"{f'📂 Подкатегория: {subcategory}\n' if subcategory else ''}"
+                f"{subcategory_line}"
                 f"📝 **Тип:** {type_}\n"
                 f"💰 **Цена:** {params.get('price', 1.11)} USDT\n"
                 f"📊 **Теперь файлов в наборе:** {len(bundle_files)}\n"
@@ -4903,7 +4945,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Неверный формат ID. ID должен быть числом")
         return
     
-    # ИЗМЕНЕНИЕ: создание категории с placeholder-товаром
+    # ИСПРАВЛЕНО: создание категории с placeholder-товаром
     elif context.user_data.get('awaiting_category_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_category_name']
@@ -4937,7 +4979,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_category_name']
         return
     
-    # ИЗМЕНЕНИЕ: создание подкатегории с placeholder-товаром
+    # ИСПРАВЛЕНО: создание подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_subcategory_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_subcategory_name']
@@ -4973,7 +5015,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_subcategory_name']
         return
     
-    # ИЗМЕНЕНИЕ: создание типа в категории (без подкатегории) с placeholder-товаром
+    # ИСПРАВЛЕНО: создание типа в категории (без подкатегории) с placeholder-товаром
     elif context.user_data.get('awaiting_type_to_category') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_to_category']
@@ -5010,7 +5052,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['awaiting_type_to_category']
         return
     
-    # ИЗМЕНЕНИЕ: создание типа в подкатегории с placeholder-товаром
+    # ИСПРАВЛЕНО: создание типа в подкатегории с placeholder-товаром
     elif context.user_data.get('awaiting_type_name') and is_admin(user_id):
         if text.lower() in ['отмена', 'cancel', 'назад', 'back']:
             del context.user_data['awaiting_type_name']
@@ -5119,7 +5161,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             price_str = parts[0].strip()
             description = '|'.join(parts[1:]).strip()
-            
+
             try:
                 price = float(price_str.replace(',', '.'))
                 if price <= 0:
@@ -5128,27 +5170,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 await update.message.reply_text("❌ Неверный формат цены! Используйте число (например: 1.11)")
                 return
-            
+
             params = context.user_data['awaiting_bulk_upload_params']
             params['price'] = price
             params['description'] = description
-            
+
+            # Формируем текст сообщения без вложенных f-строк
+            text = f"✅ **Параметры установлены!**\n\n"
+            text += f"📁 **Категория:** {params['category']}\n"
+            if params.get('subcategory'):
+                text += f"📂 Подкатегория: {params['subcategory']}\n"
+            text += f"📝 **Тип:** {params['type']}\n"
+            text += f"💰 **Цена:** {price} USDT\n"
+            text += f"📝 **Описание:** {description}\n\n"
+            text += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
+            text += "Каждый файл будет добавлен в набор для этого типа.\n\n"
+            text += "Для завершения нажмите '🔙 В админку'"
+
             await update.message.reply_text(
-                f"✅ **Параметры установлены!**\n\n"
-                f"📁 **Категория:** {params['category']}\n"
-                f"{f'📂 Подкатегория: {params['subcategory']}\n' if params.get('subcategory') else ''}"
-                f"📝 **Тип:** {params['type']}\n"
-                f"💰 **Цена:** {price} USDT\n"
-                f"📝 **Описание:** {description}\n\n"
-                "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
-                "Каждый файл будет добавлен в набор для этого типа.\n\n"
-                "Для завершения нажмите '🔙 В админку'",
+                text,
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")]
                 ])
             )
-            
         except Exception as e:
             logger.error(f"Ошибка установки параметров массовой загрузки: {e}")
             await update.message.reply_text(
