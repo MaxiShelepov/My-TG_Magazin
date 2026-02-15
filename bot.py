@@ -108,7 +108,7 @@ def is_cache_valid(cache_time: float) -> bool:
 def escape_markdown(text: str) -> str:
     """Экранирует спецсимволы для Telegram Markdown (legacy)."""
     escape_chars = r'_*[]()~>#+-=|{}.!'
-    return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
+    return ''.join(f'\\{c}' if c in escape_chars else c for c in str(text))
 
 # ========== CRYPTOBOT API ==========
 class CryptoBotAPI:
@@ -344,11 +344,16 @@ def save_requests():
 def save_preorders():
     atomic_json_dump(preorders, PREORDERS_FILE)
 
-def escape_username(username: str) -> str:
-    """Заменяет подчёркивания на дефисы для совместимости с Markdown (сохраняем так в БД)."""
+def clean_username(username: str) -> str:
+    """Очищает username от лишних символов, но сохраняет подчёркивания."""
     if not username:
         return "unknown"
-    return username.replace("_", "-").replace("@", "").replace("!", "").replace("#", "")
+    # Убираем @ в начале, если есть, и некоторые спецсимволы, но подчёркивание оставляем
+    username = username.lstrip('@')
+    # Удаляем нежелательные символы, но оставляем буквы, цифры, подчёркивание и дефис
+    allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-')
+    cleaned = ''.join(c for c in username if c in allowed)
+    return cleaned if cleaned else "unknown"
 
 def ensure_user_registered(user_id, user_data=None):
     user_id_str = str(user_id)
@@ -375,9 +380,11 @@ def update_user_info(user_id: int, username: str = None, first_name: str = None)
         ensure_user_registered(user_id)
     user_data = users[user_id_str]
     if username is not None:
-        user_data['username'] = escape_username(username)
+        # Сохраняем оригинальный username (очищенный от @, но с подчёркиваниями)
+        user_data['username'] = clean_username(username)
     if first_name is not None:
-        user_data['first_name'] = first_name.replace("_", "-")
+        # Имя тоже экранируем при выводе, но сохраняем как есть
+        user_data['first_name'] = first_name
     save_users()
     return user_data
 
@@ -948,6 +955,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bundle_products = [p for p in available_products if p.get('is_bundle', False)]
 
     safe_first_name = escape_markdown(user_data.get('first_name', 'Пользователь'))
+    safe_username = escape_markdown(user_data.get('username', 'unknown'))
     welcome_text = (
         f"👋 **Привет, {safe_first_name}!**\n\n"
         f"💰 **Ваш баланс:** {user_data.get('balance_usdt', 0.0):.2f} USDT\n"
