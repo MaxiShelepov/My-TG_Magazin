@@ -9,6 +9,7 @@ import html
 import shutil
 import random
 import time
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -102,6 +103,12 @@ def invalidate_caches():
 
 def is_cache_valid(cache_time: float) -> bool:
     return time.time() - cache_time < CACHE_TTL
+
+# ========== ЭКРАНИРОВАНИЕ ДЛЯ MARKDOWN ==========
+def escape_markdown(text: str) -> str:
+    """Экранирует спецсимволы для Telegram Markdown (legacy)."""
+    escape_chars = r'_*[]()~>#+-=|{}.!'
+    return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
 # ========== CRYPTOBOT API ==========
 class CryptoBotAPI:
@@ -338,6 +345,7 @@ def save_preorders():
     atomic_json_dump(preorders, PREORDERS_FILE)
 
 def escape_username(username: str) -> str:
+    """Заменяет подчёркивания на дефисы для совместимости с Markdown (сохраняем так в БД)."""
     if not username:
         return "unknown"
     return username.replace("_", "-").replace("@", "").replace("!", "").replace("#", "")
@@ -939,7 +947,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     regular_products = [p for p in available_products if not p.get('has_file')]
     bundle_products = [p for p in available_products if p.get('is_bundle', False)]
 
-    safe_first_name = user_data.get('first_name', 'Пользователь').replace("_", "-")
+    safe_first_name = escape_markdown(user_data.get('first_name', 'Пользователь'))
     welcome_text = (
         f"👋 **Привет, {safe_first_name}!**\n\n"
         f"💰 **Ваш баланс:** {user_data.get('balance_usdt', 0.0):.2f} USDT\n"
@@ -1000,7 +1008,7 @@ async def catalog_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bundle_count = len([p for p in category_products if p.get('is_bundle', False)])
         file_count = len([p for p in category_products if p.get('has_file') and not p.get('is_bundle', False)])
         regular_count = len([p for p in category_products if not p.get('has_file')])
-        categories_text += f"{i}. **{category}**\n"
+        categories_text += f"{i}. **{escape_markdown(category)}**\n"
         categories_text += f"   📦 Товаров: {len(category_products)}\n"
         categories_text += f"   📦 Наборов: {bundle_count}\n"
         categories_text += f"   📁 Файловых: {file_count}\n"
@@ -1039,16 +1047,16 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
     if not filtered_products:
         await safe_edit_message_text(
             query=query,
-            text=f"📭 **В категории '{category_title}' нет доступных товаров.**",
+            text=f"📭 **В категории '{escape_markdown(category_title)}' нет доступных товаров.**",
             parse_mode='Markdown',
             reply_markup=get_catalog_categories_keyboard()
         )
         return
-    catalog_text = f"🛍️ **Каталог: {category_title}**\n\n"
+    catalog_text = f"🛍️ **Каталог: {escape_markdown(category_title)}**\n\n"
     for i, product in enumerate(filtered_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        catalog_text += f"{i}. {emoji} **{product['name']}**\n"
+        catalog_text += f"{i}. {emoji} **{escape_markdown(product['name'])}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
@@ -1058,7 +1066,7 @@ async def catalog_category_handler(update: Update, context: ContextTypes.DEFAULT
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
         if product.get('description'):
-            desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
+            desc = escape_markdown(product['description'][:50] + "..." if len(product['description']) > 50 else product['description'])
             catalog_text += f"   📝 {desc}\n"
         catalog_text += "\n"
     catalog_text += "🛒 **Выберите товар для покупки:**"
@@ -1076,12 +1084,12 @@ async def category_types_handler(update: Update, context: ContextTypes.DEFAULT_T
     if not types:
         await safe_edit_message_text(
             query=query,
-            text=f"📭 **В категории '{category}' нет типов.**\n\nПереходим к товарам без типа...",
+            text=f"📭 **В категории '{escape_markdown(category)}' нет типов.**\n\nПереходим к товарам без типа...",
             parse_mode='Markdown',
             reply_markup=get_subcategories_keyboard(category)
         )
         return
-    catalog_text = f"📁 **Категория: {category}**\n\n"
+    catalog_text = f"📁 **Категория: {escape_markdown(category)}**\n\n"
     catalog_text += "📝 **Выберите тип товаров:**\n\n"
     types_with_counts = []
     for type_ in types:
@@ -1092,7 +1100,7 @@ async def category_types_handler(update: Update, context: ContextTypes.DEFAULT_T
         types_with_counts.append((type_, count))
     types_with_counts.sort(key=lambda x: x[1], reverse=True)
     for i, (type_, count) in enumerate(types_with_counts, 1):
-        catalog_text += f"{i}. **{type_}** - {count} товар(ов)\n"
+        catalog_text += f"{i}. **{escape_markdown(type_)}** - {count} товар(ов)\n"
     catalog_text += "\n📦 **Без типа** - для просмотра товаров без типа"
     await safe_edit_message_text(
         query=query,
@@ -1112,7 +1120,7 @@ async def subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await catalog_category_handler(update, context, category)
         return
-    catalog_text = f"📂 **Категория: {category}**\n\n"
+    catalog_text = f"📂 **Категория: {escape_markdown(category)}**\n\n"
     catalog_text += "📁 **Выберите подкатегорию:**\n\n"
     subcategories_with_counts = []
     for subcat in subcategories:
@@ -1123,7 +1131,7 @@ async def subcategory_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         subcategories_with_counts.append((subcat, count))
     subcategories_with_counts.sort(key=lambda x: x[1], reverse=True)
     for i, (subcat, count) in enumerate(subcategories_with_counts, 1):
-        catalog_text += f"{i}. **{subcat}** - {count} товар(ов)\n"
+        catalog_text += f"{i}. **{escape_markdown(subcat)}** - {count} товар(ов)\n"
     catalog_text += "\n📦 **Без подкатегории** - для просмотра товаров без подкатегории"
     category_types = get_types(category, None)
     if category_types:
@@ -1145,17 +1153,17 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
         if not available_products:
             await safe_edit_message_text(
                 query=query,
-                text=f"📭 **В подкатегории '{subcategory}' нет доступных товаров.**",
+                text=f"📭 **В подкатегории '{escape_markdown(subcategory)}' нет доступных товаров.**",
                 parse_mode='Markdown',
                 reply_markup=get_subcategories_keyboard(category)
             )
             return
-        catalog_text = f"🛍️ **Категория: {category}**\n"
-        catalog_text += f"📂 **Подкатегория: {subcategory}**\n\n"
+        catalog_text = f"🛍️ **Категория: {escape_markdown(category)}**\n"
+        catalog_text += f"📂 **Подкатегория: {escape_markdown(subcategory)}**\n\n"
         for i, product in enumerate(available_products, 1):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 1)
-            catalog_text += f"{i}. {emoji} **{product['name']}**\n"
+            catalog_text += f"{i}. {emoji} **{escape_markdown(product['name'])}**\n"
             catalog_text += f"   💰 **Цена:** {product['price']} USDT"
             if product.get('is_bundle', False):
                 available_files = get_available_files_count(product.get('bundle_files', []))
@@ -1165,7 +1173,7 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
                 catalog_text += f"\n"
                 catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
             if product.get('description'):
-                desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
+                desc = escape_markdown(product['description'][:50] + "..." if len(product['description']) > 50 else product['description'])
                 catalog_text += f"   📝 {desc}\n"
             catalog_text += "\n"
         catalog_text += "🛒 **Выберите товар для покупки:**"
@@ -1176,8 +1184,8 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
             reply_markup=get_products_by_path_keyboard(category, subcategory)
         )
     else:
-        catalog_text = f"📂 **Категория: {category}**\n"
-        catalog_text += f"📁 **Подкатегория: {subcategory}**\n\n"
+        catalog_text = f"📂 **Категория: {escape_markdown(category)}**\n"
+        catalog_text += f"📁 **Подкатегория: {escape_markdown(subcategory)}**\n\n"
         catalog_text += "📝 **Выберите тип товаров:**\n\n"
         types_with_counts = []
         for type_ in types:
@@ -1188,7 +1196,7 @@ async def catalog_subcategory_handler(update: Update, context: ContextTypes.DEFA
             types_with_counts.append((type_, count))
         types_with_counts.sort(key=lambda x: x[1], reverse=True)
         for i, (type_, count) in enumerate(types_with_counts, 1):
-            catalog_text += f"{i}. **{type_}** - {count} товар(ов)\n"
+            catalog_text += f"{i}. **{escape_markdown(type_)}** - {count} товар(ов)\n"
         catalog_text += "\n📦 **Без типа** - для просмотра товаров без типа"
         await safe_edit_message_text(
             query=query,
@@ -1205,18 +1213,18 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if not available_products:
         await safe_edit_message_text(
             query=query,
-            text=f"📭 **В типе '{type_}' нет доступных товаров.**",
+            text=f"📭 **В типе '{escape_markdown(type_)}' нет доступных товаров.**",
             parse_mode='Markdown',
             reply_markup=get_types_keyboard(category, subcategory)
         )
         return
-    catalog_text = f"🛍️ **Категория: {category}**\n"
-    catalog_text += f"📂 **Подкатегория:** {subcategory}\n"
-    catalog_text += f"📝 **Тип: {type_}**\n\n"
+    catalog_text = f"🛍️ **Категория: {escape_markdown(category)}**\n"
+    catalog_text += f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n"
+    catalog_text += f"📝 **Тип: {escape_markdown(type_)}**\n\n"
     for i, product in enumerate(available_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        catalog_text += f"{i}. {emoji} **{product['name']}**\n"
+        catalog_text += f"{i}. {emoji} **{escape_markdown(product['name'])}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
@@ -1226,7 +1234,7 @@ async def catalog_type_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
         if product.get('description'):
-            desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
+            desc = escape_markdown(product['description'][:50] + "..." if len(product['description']) > 50 else product['description'])
             catalog_text += f"   📝 {desc}\n"
         catalog_text += "\n"
     catalog_text += "🛒 **Выберите товар для покупки:**"
@@ -1245,17 +1253,17 @@ async def catalog_type_no_subcategory_handler(update: Update, context: ContextTy
     if not available_products:
         await safe_edit_message_text(
             query=query,
-            text=f"📭 **В типе '{type_}' (без подкатегории) нет доступных товаров.**",
+            text=f"📭 **В типе '{escape_markdown(type_)}' (без подкатегории) нет доступных товаров.**",
             parse_mode='Markdown',
             reply_markup=get_category_types_keyboard(category)
         )
         return
-    catalog_text = f"🛍️ **Категория: {category}**\n"
-    catalog_text += f"📝 **Тип: {type_}** (без подкатегории)\n\n"
+    catalog_text = f"🛍️ **Категория: {escape_markdown(category)}**\n"
+    catalog_text += f"📝 **Тип: {escape_markdown(type_)}** (без подкатегории)\n\n"
     for i, product in enumerate(available_products, 1):
         emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
         quantity = product.get('quantity', 1)
-        catalog_text += f"{i}. {emoji} **{product['name']}**\n"
+        catalog_text += f"{i}. {emoji} **{escape_markdown(product['name'])}**\n"
         catalog_text += f"   💰 **Цена:** {product['price']} USDT"
         if product.get('is_bundle', False):
             available_files = get_available_files_count(product.get('bundle_files', []))
@@ -1265,7 +1273,7 @@ async def catalog_type_no_subcategory_handler(update: Update, context: ContextTy
             catalog_text += f"\n"
             catalog_text += f"   📦 **В наличии:** {quantity} шт.\n"
         if product.get('description'):
-            desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
+            desc = escape_markdown(product['description'][:50] + "..." if len(product['description']) > 50 else product['description'])
             catalog_text += f"   📝 {desc}\n"
         catalog_text += "\n"
     catalog_text += "🛒 **Выберите товар для покупки:**"
@@ -1292,8 +1300,8 @@ async def personal_account_handler(update: Update, context: ContextTypes.DEFAULT
     purchased_files = user_data.get('files_purchased', [])
     user_purchases = get_user_purchases(user_id)
     purchases_count = len(user_purchases)
-    safe_username = user_data.get('username', 'не указан')
-    safe_first_name = user_data.get('first_name', user.first_name)
+    safe_username = escape_markdown(user_data.get('username', 'не указан'))
+    safe_first_name = escape_markdown(user_data.get('first_name', user.first_name))
 
     response_text = (
         f"👤 **Личный кабинет**\n\n"
@@ -1341,7 +1349,7 @@ async def available_products_handler(update: Update, context: ContextTypes.DEFAU
         for i, product in enumerate(available_products[:10], 1):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 1)
-            response_text += f"{i}. {emoji} **{product['name']}**\n"
+            response_text += f"{i}. {emoji} **{escape_markdown(product['name'])}**\n"
             response_text += f"   💰 **Цена:** {product['price']} USDT"
             if product.get('is_bundle', False):
                 available_files = get_available_files_count(product.get('bundle_files', []))
@@ -1351,7 +1359,7 @@ async def available_products_handler(update: Update, context: ContextTypes.DEFAU
                 response_text += f"\n"
                 response_text += f"   📦 **В наличии:** {quantity} шт.\n"
             if product.get('description'):
-                desc = product['description'][:50] + "..." if len(product['description']) > 50 else product['description']
+                desc = escape_markdown(product['description'][:50] + "..." if len(product['description']) > 50 else product['description'])
                 response_text += f"   📝 {desc}\n"
             response_text += "\n"
         if len(available_products) > 10:
@@ -1483,7 +1491,7 @@ async def my_purchases_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     for i, purchase in enumerate(page_purchases, start_idx + 1):
         purchase_id = purchase.get("purchase_id", "N/A")[:8]
-        product_name = purchase.get("product_name", "Неизвестный товар")
+        product_name = escape_markdown(purchase.get("product_name", "Неизвестный товар"))
         purchase_date = purchase.get("purchased_at", "")
         try:
             if purchase_date:
@@ -1553,7 +1561,7 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    product_name = purchase.get("product_name", "Неизвестный товар")
+    product_name = escape_markdown(purchase.get("product_name", "Неизвестный товар"))
     purchase_date = purchase.get("purchased_at", "")
     price = purchase.get("price", 0)
     quantity = purchase.get("quantity", 1)
@@ -1580,10 +1588,10 @@ async def show_purchase_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         response_text += f"📦 **Набор файлов:** {len(bundle_files)} файлов\n"
         response_text += "📁 **Файлы в наборе:**\n"
         for i, file_info in enumerate(bundle_files, 1):
-            file_name = file_info.get("name", f"Файл {i}")
+            file_name = escape_markdown(file_info.get("name", f"Файл {i}"))
             response_text += f"   {i}. {file_name}\n"
     elif purchase.get("has_file", False):
-        file_name = purchase.get("file_name", "Файл")
+        file_name = escape_markdown(purchase.get("file_name", "Файл"))
         response_text += f"📁 **Файл:** {file_name}\n"
 
     response_text += "\nНажмите '📥 Скачать файл' чтобы получить файл."
@@ -1747,7 +1755,7 @@ async def process_rub_amount(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 chat_id=admin_id,
                 text=f"📋 **Новая заявка на пополнение!**\n\n"
                      f"🆔 **Номер:** `{request_id}`\n"
-                     f"👤 **Пользователь:** {user_data.get('first_name')} (@{user_data.get('username')})\n"
+                     f"👤 **Пользователь:** {escape_markdown(user_data.get('first_name'))} (@{escape_markdown(user_data.get('username'))})\n"
                      f"🆔 **ID:** `{user_id}`\n"
                      f"💰 **Сумма в рублях:** {rub_amount:.2f} руб\n"
                      f"💵 **Сумма в USDT:** {usdt_amount:.2f} USDT\n\n"
@@ -2164,7 +2172,7 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
     product_available = is_product_available(selected_product)
 
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
-    product_text = f"{emoji} **{selected_product['name']}**\n\n"
+    product_text = f"{emoji} **{escape_markdown(selected_product['name'])}**\n\n"
     product_text += f"💰 **Цена:** {selected_product['price']} USDT"
 
     if selected_product.get('is_bundle', False):
@@ -2177,7 +2185,7 @@ async def show_product_details(update: Update, context: ContextTypes.DEFAULT_TYP
         product_text += f"\n📦 **В наличии:** {quantity} шт.\n"
 
     if selected_product.get('description'):
-        product_text += f"\n📝 **Описание:**\n{selected_product['description']}\n"
+        product_text += f"\n📝 **Описание:**\n{escape_markdown(selected_product['description'])}\n"
 
     user_balance = user_data.get('balance_usdt', 0.0)
     price_per_item = selected_product['price']
@@ -2265,7 +2273,7 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
         await safe_answer_query(query, f"❌ Недостаточно средств! Нужно: {total_price} USDT", show_alert=True)
         insufficient_text = (
             f"💰 **Недостаточно средств для покупки!**\n\n"
-            f"🛍️ **Товар:** {selected_product['name']}\n"
+            f"🛍️ **Товар:** {escape_markdown(selected_product['name'])}\n"
             f"📦 **Количество:** {quantity} шт.\n"
             f"💰 **Цена за штуку:** {selected_product['price']} USDT\n"
             f"💵 **Общая стоимость:** {total_price} USDT\n"
@@ -2286,7 +2294,7 @@ async def handle_quantity_selection(update: Update, context: ContextTypes.DEFAUL
 
     emoji = "📦" if selected_product.get('is_bundle', False) else "📁" if selected_product.get('has_file') else "🛍️"
     confirm_text = f"✅ **Подтверждение покупки**\n\n"
-    confirm_text += f"{emoji} **Товар:** {selected_product['name']}\n"
+    confirm_text += f"{emoji} **Товар:** {escape_markdown(selected_product['name'])}\n"
     confirm_text += f"💰 **Цена за штуку:** {selected_product['price']} USDT\n"
     confirm_text += f"📊 **Количество:** {quantity} шт.\n"
     confirm_text += f"💵 **Общая стоимость:** {total_price} USDT\n"
@@ -2343,7 +2351,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
         await safe_answer_query(query, f"❌ Недостаточно средств! Нужно: {total_price} USDT, у вас: {balance:.2f} USDT", show_alert=True)
         insufficient_text = (
             f"💰 **Недостаточно средств!**\n\n"
-            f"🛍️ **Товар:** {selected_product['name']}\n"
+            f"🛍️ **Товар:** {escape_markdown(selected_product['name'])}\n"
             f"📦 **Количество:** {quantity} шт.\n"
             f"💵 **Общая стоимость:** {total_price} USDT\n"
             f"👤 **Ваш баланс:** {balance:.2f} USDT\n"
@@ -2394,7 +2402,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             await safe_edit_message_text(
                 query=query,
                 text=f"🎉 **Покупка успешно завершена!**\n\n"
-                    f"📦 **Набор:** {selected_product['name']}\n"
+                    f"📦 **Набор:** {escape_markdown(selected_product['name'])}\n"
                     f"📁 **Куплено файлов:** {quantity}\n"
                     f"💰 **Цена за штуку:** {selected_product['price']} USDT\n"
                     f"💵 **Общая стоимость:** {total_price} USDT\n"
@@ -2473,7 +2481,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
             await safe_edit_message_text(
                 query=query,
                 text=f"🎉 **Покупка успешно завершена!**\n\n"
-                    f"🛍️ **Товар:** {selected_product['name']}\n"
+                    f"🛍️ **Товар:** {escape_markdown(selected_product['name'])}\n"
                     f"💰 **Стоимость:** {total_price} USDT\n"
                     f"💳 **Остаток баланса:** {user_data['balance_usdt']:.2f} USDT\n"
                     f"📦 **Остаток товара:** {selected_product.get('quantity', 0)} шт.\n\n"
@@ -2540,7 +2548,7 @@ async def process_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, p
         await safe_edit_message_text(
             query=query,
             text=f"✅ **Покупка совершена!**\n\n"
-                f"🛍️ **Товар:** {selected_product['name']}\n"
+                f"🛍️ **Товар:** {escape_markdown(selected_product['name'])}\n"
                 f"💰 **Стоимость:** {total_price} USDT\n"
                 f"📋 **Номер заказа:** {order_id}\n"
                 f"💳 **Остаток баланса:** {user_data['balance_usdt']:.2f} USDT\n"
@@ -2663,7 +2671,7 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             except Exception as e:
                 logger.error(f"Ошибка отправки файла по промокоду: {e}")
                 return True, f"✅ Товар получен, но файл не удалось отправить. Обратитесь в поддержку."
-            return True, f"✅ Промокод активирован! Товар **{product['name']}** отправлен."
+            return True, f"✅ Промокод активирован! Товар **{escape_markdown(product['name'])}** отправлен."
 
         elif product.get('is_bundle'):
             bundle_files = product.get('bundle_files', [])
@@ -2713,7 +2721,7 @@ async def activate_promocode(user_id: int, code: str, context: ContextTypes.DEFA
             except Exception as e:
                 logger.error(f"Ошибка отправки файла из набора по промокоду: {e}")
                 return True, f"✅ Файл получен, но не удалось отправить. Обратитесь в поддержку."
-            return True, f"✅ Промокод активирован! Файл из набора **{product['name']}** отправлен."
+            return True, f"✅ Промокод активирован! Файл из набора **{escape_markdown(product['name'])}** отправлен."
         else:
             return False, "❌ Товар не поддерживает выдачу."
     return False, "❌ Неизвестный тип промокода."
@@ -2877,7 +2885,7 @@ async def admin_manage_categories_handler(update: Update, context: ContextTypes.
         for category in categories:
             subcategories = get_subcategories(category)
             category_types = get_types(category, None)
-            info_text += f"\n📁 **{category}:**\n"
+            info_text += f"\n📁 **{escape_markdown(category)}:**\n"
             info_text += f"   📂 Подкатегорий: {len(subcategories)}\n"
             info_text += f"   📝 Типов в категории: {len(category_types)}\n"
 
@@ -3025,7 +3033,7 @@ async def select_category_for_type_to_category_handler(update: Update, context: 
     await safe_answer_query(query)
     await safe_edit_message_text(
         query=query,
-        text=f"➕ **Добавление типа в категорию (без подкатегории): {category}**\n\n"
+        text=f"➕ **Добавление типа в категорию (без подкатегории): {escape_markdown(category)}**\n\n"
             "Введите название нового типа:\n\n"
             "📝 **Пример:** Женщины, Мужчины, Унисекс\n\n"
             "Или 'отмена' для отмены",
@@ -3041,7 +3049,7 @@ async def select_category_for_subcategory_handler(update: Update, context: Conte
     await safe_answer_query(query)
     await safe_edit_message_text(
         query=query,
-        text=f"➕ **Добавление подкатегории в категорию: {category}**\n\n"
+        text=f"➕ **Добавление подкатегории в категорию: {escape_markdown(category)}**\n\n"
             "Введите название новой подкатегории:\n\n"
             "📝 **Пример:** Мегафон, Tele2, МТС\n\n"
             "Или 'отмена' для отмены",
@@ -3059,7 +3067,7 @@ async def select_category_for_type_handler(update: Update, context: ContextTypes
     if not subcategories:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет подкатегорий!**\n\n"
+            text=f"❌ **В категории '{escape_markdown(category)}' нет подкатегорий!**\n\n"
                 "Вы можете:\n"
                 "1. Создать подкатегорию\n"
                 "2. Создать тип прямо в категории (без подкатегории)",
@@ -3076,7 +3084,7 @@ async def select_category_for_type_handler(update: Update, context: ContextTypes
     await safe_edit_message_text(
         query=query,
         text=f"📝 **Создание типа в подкатегории**\n"
-            f"📁 **Категория:** {category}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n\n"
             "Тип - это третий уровень иерархии.\n"
             "Пример: В подкатегории 'Мегафон' можно создать типы:\n"
             "• Женщины\n• Мужчины\n• Унисекс\n\n"
@@ -3090,8 +3098,8 @@ async def select_subcategory_for_type_handler(update: Update, context: ContextTy
     await safe_answer_query(query)
     await safe_edit_message_text(
         query=query,
-        text=f"➕ **Добавление типа в подкатегорию: {subcategory}**\n"
-            f"📁 **Категория:** {category}\n\n"
+        text=f"➕ **Добавление типа в подкатегорию: {escape_markdown(subcategory)}**\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n\n"
             "Введите название нового типа:\n\n"
             "📝 **Пример:** Женщины, Мужчины, Унисекс\n\n"
             "Или 'отмена' для отмены",
@@ -3122,22 +3130,22 @@ async def admin_view_structure_handler(update: Update, context: ContextTypes.DEF
 
     structure_text = "📊 **Структура каталога:**\n\n"
     for i, category in enumerate(categories, 1):
-        structure_text += f"{i}. 📁 **{category}**\n"
+        structure_text += f"{i}. 📁 **{escape_markdown(category)}**\n"
         subcategories = get_subcategories(category)
         category_types = get_types(category, None)
         if category_types:
             structure_text += f"   📝 **Типы в категории:**\n"
             for type_ in category_types:
                 product_count = len([p for p in catalog if p.get('category') == category and p.get('type') == type_ and not p.get('subcategory')])
-                structure_text += f"      • {type_} ({product_count} товаров)\n"
+                structure_text += f"      • {escape_markdown(type_)} ({product_count} товаров)\n"
         if subcategories:
             for j, subcategory in enumerate(subcategories, 1):
-                structure_text += f"   {j}. 📂 **{subcategory}**\n"
+                structure_text += f"   {j}. 📂 **{escape_markdown(subcategory)}**\n"
                 types = get_types(category, subcategory)
                 if types:
                     for k, type_ in enumerate(types, 1):
                         product_count = len(get_products_by_path(category, subcategory, type_))
-                        structure_text += f"      {k}. 📝 **{type_}** ({product_count} товаров)\n"
+                        structure_text += f"      {k}. 📝 **{escape_markdown(type_)}** ({product_count} товаров)\n"
                 else:
                     product_count = len(get_products_by_path(category, subcategory))
                     structure_text += f"      • 📦 Товаров без типа: {product_count}\n"
@@ -3207,7 +3215,7 @@ async def confirm_delete_category_handler(update: Update, context: ContextTypes.
     subcategories = get_subcategories(category)
 
     confirm_text = (
-        f"⚠️ **Подтверждение удаления категории:** {category}\n\n"
+        f"⚠️ **Подтверждение удаления категории:** {escape_markdown(category)}\n\n"
         f"📊 **Статистика для удаления:**\n"
         f"• Категория: {category}\n"
         f"• Подкатегорий: {len(subcategories)}\n"
@@ -3299,7 +3307,7 @@ async def select_category_for_delete_subcat_handler(update: Update, context: Con
     if not subcategories:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет подкатегорий для удаления!**",
+            text=f"❌ **В категории '{escape_markdown(category)}' нет подкатегорий для удаления!**",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 К выбору категории", callback_data="admin_delete_subcategory")]
@@ -3318,7 +3326,7 @@ async def select_category_for_delete_subcat_handler(update: Update, context: Con
 
     await safe_edit_message_text(
         query=query,
-        text=f"🗑️ **Удаление подкатегории в категории '{category}'**\n\nВыберите подкатегорию для удаления:",
+        text=f"🗑️ **Удаление подкатегории в категории '{escape_markdown(category)}'**\n\nВыберите подкатегорию для удаления:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -3335,8 +3343,8 @@ async def select_subcategory_for_delete_handler(update: Update, context: Context
 
     confirm_text = (
         f"⚠️ **Подтверждение удаления подкатегории:**\n\n"
-        f"📁 **Категория:** {category}\n"
-        f"📂 **Подкатегория:** {subcategory}\n"
+        f"📁 **Категория:** {escape_markdown(category)}\n"
+        f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n"
         f"📦 **Товаров в подкатегории:** {product_count}\n\n"
         f"❌ **Все данные подкатегории будут безвозвратно удалены!**\n\n"
         f"Вы уверены, что хотите удалить подкатегорию '{subcategory}'?"
@@ -3460,8 +3468,8 @@ async def admin_list_admins_handler(update: Update, context: ContextTypes.DEFAUL
     response_text = "👥 **Список администраторов:**\n\n"
     for i, admin_id in enumerate(admins, 1):
         admin_info = users.get(str(admin_id), {})
-        username = admin_info.get('username', 'unknown')
-        first_name = admin_info.get('first_name', f'Пользователь {admin_id}')
+        username = escape_markdown(admin_info.get('username', 'unknown'))
+        first_name = escape_markdown(admin_info.get('first_name', f'Пользователь {admin_id}'))
         if admin_id == BOT_OWNER_ID:
             response_text += f"{i}. 👑 **Владелец бота:**\n"
         else:
@@ -3542,8 +3550,8 @@ async def removeadmin_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         if remove_admin(admin_id_to_remove):
             admin_info = users.get(str(admin_id_to_remove), {})
-            username = admin_info.get('username', 'unknown')
-            first_name = admin_info.get('first_name', 'User')
+            username = escape_markdown(admin_info.get('username', 'unknown'))
+            first_name = escape_markdown(admin_info.get('first_name', 'User'))
             await update.message.reply_text(
                 f"✅ **Администратор {first_name} удален!**\n\n"
                 f"👤 **Имя:** {first_name}\n"
@@ -3683,12 +3691,12 @@ async def process_product_creation(update: Update, context: ContextTypes.DEFAULT
         response_text = (
             f"✅ **Товар создан успешно!**\n\n"
             f"🆔 **ID товара:** `{product_id}`\n"
-            f"🛍️ **Название:** {name}\n"
+            f"🛍️ **Название:** {escape_markdown(name)}\n"
             f"💰 **Цена:** {price_usdt} USDT\n"
-            f"📝 **Описание:** {description}\n"
-            f"📂 **Категория:** {category}\n"
-            f"📁 **Подкатегория:** {subcategory if subcategory else 'Нет'}\n"
-            f"📝 **Тип:** {type_ if type_ else 'Нет'}\n"
+            f"📝 **Описание:** {escape_markdown(description)}\n"
+            f"📂 **Категория:** {escape_markdown(category)}\n"
+            f"📁 **Подкатегория:** {escape_markdown(subcategory) if subcategory else 'Нет'}\n"
+            f"📝 **Тип:** {escape_markdown(type_) if type_ else 'Нет'}\n"
             f"📄 **Файловый товар:** {'Да' if has_file else 'Нет'}\n"
             f"📦 **Количество:** {new_product['quantity']} шт."
         )
@@ -3763,7 +3771,7 @@ async def bulk_select_category_handler(update: Update, context: ContextTypes.DEF
     if not keyboard:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет подкатегорий или типов!**\n\nСначала добавьте подкатегорию или тип в категорию.",
+            text=f"❌ **В категории '{escape_markdown(category)}' нет подкатегорий или типов!**\n\nСначала добавьте подкатегорию или тип в категорию.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
@@ -3774,7 +3782,7 @@ async def bulk_select_category_handler(update: Update, context: ContextTypes.DEF
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
-            f"📁 **Категория:** {category}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n\n"
             "Выберите подкатегорию или типы в категории:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -3787,7 +3795,7 @@ async def bulk_category_types_handler(update: Update, context: ContextTypes.DEFA
     if not category_types:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В категории '{category}' нет типов (без подкатегории)!**\n\nСначала добавьте тип в категорию.",
+            text=f"❌ **В категории '{escape_markdown(category)}' нет типов (без подкатегории)!**\n\nСначала добавьте тип в категорию.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
@@ -3796,13 +3804,13 @@ async def bulk_category_types_handler(update: Update, context: ContextTypes.DEFA
     keyboard = []
     for type_ in category_types:
         product_count = len([p for p in catalog if p.get('category') == category and p.get('type') == type_ and not p.get('subcategory')])
-        keyboard.append([InlineKeyboardButton(f"📝 {type_} ({product_count} товаров)", callback_data=f"bulk_select_category_type:{category}:{type_}")])
+        keyboard.append([InlineKeyboardButton(f"📝 {escape_markdown(type_)} ({product_count} товаров)", callback_data=f"bulk_select_category_type:{category}:{type_}")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_select_category:{category}")])
 
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип (без подкатегории)**\n"
-            f"📁 **Категория:** {category}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n\n"
             "Выберите тип для загрузки:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -3815,7 +3823,7 @@ async def bulk_select_subcategory_handler(update: Update, context: ContextTypes.
     if not types:
         await safe_edit_message_text(
             query=query,
-            text=f"❌ **В подкатегории '{subcategory}' нет типов!**\n\nСначала добавьте тип.",
+            text=f"❌ **В подкатегории '{escape_markdown(subcategory)}' нет типов!**\n\nСначала добавьте тип.",
             parse_mode='Markdown',
             reply_markup=get_admin_keyboard()
         )
@@ -3824,14 +3832,14 @@ async def bulk_select_subcategory_handler(update: Update, context: ContextTypes.
     keyboard = []
     for type_ in types:
         product_count = len(get_products_by_path(category, subcategory, type_))
-        keyboard.append([InlineKeyboardButton(f"📝 {type_} ({product_count} товаров)", callback_data=f"bulk_select_type:{category}:{subcategory}:{type_}")])
+        keyboard.append([InlineKeyboardButton(f"📝 {escape_markdown(type_)} ({product_count} товаров)", callback_data=f"bulk_select_type:{category}:{subcategory}:{type_}")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"bulk_select_category:{category}")])
 
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
-            f"📁 **Категория:** {category}\n"
-            f"📂 **Подкатегория:** {subcategory}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n\n"
             "Выберите тип для загрузка:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -3843,8 +3851,8 @@ async def bulk_select_category_type_handler(update: Update, context: ContextType
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип (без подкатегории)**\n"
-            f"📁 **Категория:** {category}\n"
-            f"📝 **Тип:** {type_}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📝 **Тип:** {escape_markdown(type_)}\n\n"
             "📝 **Введите параметры в формате:**\n"
             "`Цена_USDT|Описание`\n\n"
             "**Пример:**\n"
@@ -3869,9 +3877,9 @@ async def bulk_select_type_handler(update: Update, context: ContextTypes.DEFAULT
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Массовая загрузка в тип**\n"
-            f"📁 **Категория:** {category}\n"
-            f"📂 **Подкатегория:** {subcategory}\n"
-            f"📝 **Тип:** {type_}\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n"
+            f"📝 **Тип:** {escape_markdown(type_)}\n\n"
             "📝 **Введите параметры в формате:**\n"
             "`Цена_USDT|Описание`\n\n"
             "**Пример:**\n"
@@ -3956,14 +3964,14 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             save_catalog()
 
             available_files = get_available_files_count(bundle_files)
-            subcategory_line = f"📂 Подкатегория: {subcategory}\n" if subcategory else ""
+            subcategory_line = f"📂 Подкатегория: {escape_markdown(subcategory)}\n" if subcategory else ""
 
             await update.message.reply_text(
-                f"✅ **Файл '{document.file_name}' добавлен в существующий набор!**\n\n"
-                f"📦 **Набор:** {existing_bundle['name']}\n"
-                f"📁 **Категория:** {category}\n"
+                f"✅ **Файл '{escape_markdown(document.file_name)}' добавлен в существующий набор!**\n\n"
+                f"📦 **Набор:** {escape_markdown(existing_bundle['name'])}\n"
+                f"📁 **Категория:** {escape_markdown(category)}\n"
                 f"{subcategory_line}"
-                f"📝 **Тип:** {type_}\n"
+                f"📝 **Тип:** {escape_markdown(type_)}\n"
                 f"💰 **Цена:** {params.get('price', 1.11)} USDT\n"
                 f"📊 **Теперь файлов в наборе:** {len(bundle_files)}\n"
                 f"📈 **Доступно файлов:** {available_files}\n\n"
@@ -4009,16 +4017,16 @@ async def handle_bulk_documents(update: Update, context: ContextTypes.DEFAULT_TY
             catalog.append(new_bundle)
             save_catalog()
 
-            subcategory_text = f"📂 **Подкатегория:** {subcategory}\n" if subcategory else ""
+            subcategory_text = f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n" if subcategory else ""
 
             await update.message.reply_text(
-                f"✅ **Создан новый набор! Файл '{document.file_name}' добавлен.**\n\n"
-                f"📦 **Название набора:** {new_bundle['name']}\n"
-                f"📁 **Категория:** {category}\n"
+                f"✅ **Создан новый набор! Файл '{escape_markdown(document.file_name)}' добавлен.**\n\n"
+                f"📦 **Название набора:** {escape_markdown(new_bundle['name'])}\n"
+                f"📁 **Категория:** {escape_markdown(category)}\n"
                 f"{subcategory_text}"
-                f"📝 **Тип:** {type_}\n"
+                f"📝 **Тип:** {escape_markdown(type_)}\n"
                 f"💰 **Цена:** {price} USDT за файл\n"
-                f"📝 **Описание:** {description}\n"
+                f"📝 **Описание:** {escape_markdown(description)}\n"
                 f"🆔 **ID набора:** `{product_id}`\n"
                 f"📦 **Количество файлов:** 1\n\n"
                 f"📤 **Можете загрузить следующий файл в этот же набор или нажмите '🔙 В админку' для завершения.**",
@@ -4052,7 +4060,7 @@ async def admin_attach_file_handler(update: Update, context: ContextTypes.DEFAUL
     keyboard = []
     for product in products_without_files:
         keyboard.append([InlineKeyboardButton(
-            f"{product['name']} ({product['price']} USDT)",
+            f"{escape_markdown(product['name'])} ({product['price']} USDT)",
             callback_data=f"attach_to:{product['id']}"
         )])
     keyboard.append([InlineKeyboardButton("🔙 В админку", callback_data="back_to_admin")])
@@ -4136,7 +4144,7 @@ async def admin_delete_product_handler(update: Update, context: ContextTypes.DEF
         if not product.get('sold', False):
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             keyboard.append([InlineKeyboardButton(
-                f"{emoji} {product['name']} ({product['price']} USDT)",
+                f"{emoji} {escape_markdown(product['name'])} ({product['price']} USDT)",
                 callback_data=f"delete_product:{product['id']}"
             )])
     if not keyboard:
@@ -4191,7 +4199,7 @@ async def delete_product_handler(update: Update, context: ContextTypes.DEFAULT_T
     await safe_edit_message_text(
         query=query,
         text=f"✅ **Товар успешно удален!**\n\n"
-            f"🛍️ **Название:** {product_name}\n"
+            f"🛍️ **Название:** {escape_markdown(product_name)}\n"
             f"🆔 **ID товара:** `{product_id}`\n\n"
             "Возвращаюсь в админ-панель...",
         parse_mode='Markdown',
@@ -4276,7 +4284,7 @@ async def admin_restock_handler(update: Update, context: ContextTypes.DEFAULT_TY
             emoji = "📦" if product.get('is_bundle', False) else "📁" if product.get('has_file') else "🛍️"
             quantity = product.get('quantity', 0)
             keyboard.append([InlineKeyboardButton(
-                f"{emoji} {product['name']} - {quantity} шт.",
+                f"{emoji} {escape_markdown(product['name'])} - {quantity} шт.",
                 callback_data=f"restock:{product['id']}"
             )])
     if not keyboard:
@@ -4300,7 +4308,7 @@ async def restock_product_handler(update: Update, context: ContextTypes.DEFAULT_
 
     await safe_edit_message_text(
         query=query,
-        text=f"📦 **Пополнение товара:** {product['name']}\n\n"
+        text=f"📦 **Пополнение товара:** {escape_markdown(product['name'])}\n\n"
             f"📊 **Текущее количество:** {product.get('quantity', 0)} шт.\n\n"
             f"📝 **Введите новое количество:**",
         parse_mode='Markdown',
@@ -4346,12 +4354,12 @@ async def admin_requests_list_handler(update: Update, context: ContextTypes.DEFA
             'approved': '✅',
             'rejected': '❌'
         }.get(req.get('status'), '❓')
-        user_info = f"{req.get('first_name')} (@{req.get('username')})"
+        user_info = f"{escape_markdown(req.get('first_name'))} (@{escape_markdown(req.get('username'))})"
         text += f"{status_emoji} **{req.get('request_id')}** – {user_info}\n"
         text += f"   💰 {req.get('rub_amount'):.2f} RUB → {req.get('usdt_amount'):.2f} USDT\n"
         text += f"   🕐 {req.get('created_at')[:16]}\n\n"
         keyboard.append([InlineKeyboardButton(
-            f"{status_emoji} Заявка {req.get('request_id')} – {req.get('first_name')}",
+            f"{status_emoji} Заявка {req.get('request_id')} – {escape_markdown(req.get('first_name'))}",
             callback_data=f"view_request:{req.get('request_id')}"
         )])
 
@@ -4386,7 +4394,7 @@ async def view_request_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     text = (
         f"📋 **Заявка #{request_id}**\n\n"
-        f"👤 **Пользователь:** {req.get('first_name')} (@{req.get('username')})\n"
+        f"👤 **Пользователь:** {escape_markdown(req.get('first_name'))} (@{escape_markdown(req.get('username'))})\n"
         f"🆔 **ID:** `{req.get('user_id')}`\n"
         f"💰 **Сумма в RUB:** {req.get('rub_amount'):.2f} руб\n"
         f"💵 **Сумма в USDT:** {req.get('usdt_amount'):.2f} USDT\n"
@@ -4554,7 +4562,7 @@ async def admin_create_item_promo_handler(update: Update, context: ContextTypes.
     keyboard = []
     for p in products:
         emoji = "📦" if p.get('is_bundle') else "📁"
-        btn_text = f"{emoji} {p['name']} – {p['price']} USDT"
+        btn_text = f"{emoji} {escape_markdown(p['name'])} – {p['price']} USDT"
         keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"promo_select_item:{p['id']}")])
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="admin_manage_promocodes")])
 
@@ -4580,7 +4588,7 @@ async def promo_select_item_handler(update: Update, context: ContextTypes.DEFAUL
     context.user_data['promo_item_product'] = product_id
     await safe_edit_message_text(
         query=query,
-        text=f"🎟️ **Выбран товар:** {product['name']}\n\nВведите код промокода (или оставьте пустым для автогенерации):",
+        text=f"🎟️ **Выбран товар:** {escape_markdown(product['name'])}\n\nВведите код промокода (или оставьте пустым для автогенерации):",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Назад", callback_data="admin_create_item_promo")]
@@ -4613,7 +4621,7 @@ async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DE
             value_str = f"{value} USDT"
         else:
             product = next((p for p in catalog if p['id'] == value), None)
-            value_str = product['name'] if product else "Товар удален"
+            value_str = escape_markdown(product['name']) if product else "Товар удален"
         created = promo.get('created_at', '')[:10]
         used_by = promo.get('used_by')
         used_at = promo.get('used_at', [])
@@ -4622,7 +4630,7 @@ async def admin_list_promocodes_handler(update: Update, context: ContextTypes.DE
             used_info = "\n   Использовали:"
             for uid, at in zip(used_by, used_at):
                 username = users.get(str(uid), {}).get('username', 'unknown')
-                used_info += f"\n      • {at[:10]} – @{username} (ID: `{uid}`)"
+                used_info += f"\n      • {at[:10]} – @{escape_markdown(username)} (ID: `{uid}`)"
         text += f"`{code}`\n"
         text += f"   {type_}: {value_str}\n"
         text += f"   {status}, создан {created}, активаций: {len(used_by) if isinstance(used_by, list) else 0}/{promo.get('max_uses', 0) if promo.get('max_uses', 0) > 0 else '∞'}"
@@ -4669,7 +4677,7 @@ async def my_preorders_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
     for pre in user_preorders:
         product = next((p for p in catalog if p['id'] == pre['product_id']), None)
-        product_name = product['name'] if product else "Товар удален"
+        product_name = escape_markdown(product['name']) if product else "Товар удален"
         status_emoji = {
             'pending': '⏳',
             'paid': '💳',
@@ -4706,7 +4714,7 @@ async def view_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     product = next((p for p in catalog if p['id'] == preorder['product_id']), None)
-    product_name = product['name'] if product else "Товар удален"
+    product_name = escape_markdown(product['name']) if product else "Товар удален"
 
     status_text = {
         'pending': '⏳ Ожидает оплаты',
@@ -4723,9 +4731,9 @@ async def view_preorder_handler(update: Update, context: ContextTypes.DEFAULT_TY
         f"📅 **Дата создания:** {preorder['created_at'][:19]}\n"
         f"📊 **Статус:** {status_text}\n\n"
         f"📋 **Ваши данные:**\n"
-        f"👤 Имя: {preorder['user_data'].get('name', 'Не указано')}\n"
-        f"📞 Контакт: {preorder['user_data'].get('contact', 'Не указано')}\n"
-        f"📝 Комментарий: {preorder['user_data'].get('comment', 'Нет')}\n"
+        f"👤 Имя: {escape_markdown(preorder['user_data'].get('name', 'Не указано'))}\n"
+        f"📞 Контакт: {escape_markdown(preorder['user_data'].get('contact', 'Не указано'))}\n"
+        f"📝 Комментарий: {escape_markdown(preorder['user_data'].get('comment', 'Нет'))}\n"
     )
 
     keyboard = [[InlineKeyboardButton("🔙 К моим предзаказам", callback_data="my_preorders")]]
@@ -4749,7 +4757,7 @@ async def preorder_product_handler(update: Update, context: ContextTypes.DEFAULT
     await safe_edit_message_text(
         query=query,
         text=f"📦 **Предзаказ товара**\n\n"
-             f"Товар: {product['name']}\n"
+             f"Товар: {escape_markdown(product['name'])}\n"
              f"Цена за единицу: {product['price']} USDT\n\n"
              f"Введите количество для предзаказа (целое число, минимум 1):",
         parse_mode='Markdown',
@@ -4804,7 +4812,7 @@ async def process_preorder_quantity(update: Update, context: ContextTypes.DEFAUL
 
     await update.message.reply_text(
         f"📦 **Оформление предзаказа**\n\n"
-        f"Товар: {product['name']}\n"
+        f"Товар: {escape_markdown(product['name'])}\n"
         f"Количество: {quantity}\n"
         f"Сумма к оплате: {total} USDT\n\n"
         "Пожалуйста, введите ваши данные в формате:\n"
@@ -4851,9 +4859,9 @@ async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TY
 
     # Парсим введённые данные
     parts = [p.strip() for p in text.split('|')]
-    name = parts[0] if len(parts) > 0 else "Не указано"
-    contact = parts[1] if len(parts) > 1 else "Не указано"
-    comment = parts[2] if len(parts) > 2 else ""
+    name = escape_markdown(parts[0]) if len(parts) > 0 else "Не указано"
+    contact = escape_markdown(parts[1]) if len(parts) > 1 else "Не указано"
+    comment = escape_markdown(parts[2]) if len(parts) > 2 else ""
 
     # Списываем деньги
     user_data['balance_usdt'] -= total
@@ -4886,7 +4894,7 @@ async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(
         f"✅ **Предзаказ успешно оформлен!**\n\n"
         f"🆔 **Номер предзаказа:** `{preorder_id}`\n"
-        f"🛍️ **Товар:** {product['name']}\n"
+        f"🛍️ **Товар:** {escape_markdown(product['name'])}\n"
         f"📊 **Количество:** {quantity}\n"
         f"💰 **Сумма:** {total} USDT\n"
         f"💳 **Новый баланс:** {user_data['balance_usdt']:.2f} USDT\n\n"
@@ -4911,9 +4919,9 @@ async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TY
                 text=(
                     f"📦 **Новый предзаказ!**\n\n"
                     f"🆔 **Номер:** `{preorder_id}`\n"
-                    f"👤 **Пользователь:** {user_data.get('first_name')} (@{user_data.get('username')})\n"
+                    f"👤 **Пользователь:** {escape_markdown(user_data.get('first_name'))} (@{escape_markdown(user_data.get('username'))})\n"
                     f"🆔 **ID:** `{user_id}`\n"
-                    f"🛍️ **Товар:** {product['name']}\n"
+                    f"🛍️ **Товар:** {escape_markdown(product['name'])}\n"
                     f"📊 **Количество:** {quantity}\n"
                     f"💰 **Сумма:** {total} USDT\n"
                     f"📋 **Данные:**\n"
@@ -4971,7 +4979,7 @@ async def admin_preorders_list_handler(update: Update, context: ContextTypes.DEF
 
     for pre in sorted_preorders:
         user = users.get(str(pre['user_id']), {})
-        user_name = user.get('first_name', 'Unknown')
+        user_name = escape_markdown(user.get('first_name', 'Unknown'))
         status_emoji = {
             'pending': '⏳',
             'paid': '💳',
@@ -4979,7 +4987,7 @@ async def admin_preorders_list_handler(update: Update, context: ContextTypes.DEF
             'cancelled': '❌'
         }.get(pre['status'], '❓')
         text += f"{status_emoji} **{pre['id'][:8]}** – {user_name}\n"
-        text += f"   🛍️ {pre['product_name']} x{pre['quantity']} = {pre['total_price']} USDT\n"
+        text += f"   🛍️ {escape_markdown(pre['product_name'])} x{pre['quantity']} = {pre['total_price']} USDT\n"
         text += f"   📅 {pre['created_at'][:16]}\n\n"
         keyboard.append([InlineKeyboardButton(
             f"{status_emoji} Предзаказ {pre['id'][:8]} – {user_name}",
@@ -5010,8 +5018,8 @@ async def view_admin_preorder_handler(update: Update, context: ContextTypes.DEFA
         return
 
     user = users.get(str(preorder['user_id']), {})
-    user_name = user.get('first_name', 'Unknown')
-    username = user.get('username', 'unknown')
+    user_name = escape_markdown(user.get('first_name', 'Unknown'))
+    username = escape_markdown(user.get('username', 'unknown'))
 
     status_text = {
         'pending': '⏳ Ожидает оплаты',
@@ -5024,16 +5032,16 @@ async def view_admin_preorder_handler(update: Update, context: ContextTypes.DEFA
         f"📦 **Предзаказ #{preorder_id[:8]}**\n\n"
         f"👤 **Пользователь:** {user_name} (@{username})\n"
         f"🆔 **ID:** `{preorder['user_id']}`\n"
-        f"🛍️ **Товар:** {preorder['product_name']}\n"
+        f"🛍️ **Товар:** {escape_markdown(preorder['product_name'])}\n"
         f"📊 **Количество:** {preorder['quantity']}\n"
         f"💰 **Цена за ед.:** {preorder['price_per_item']} USDT\n"
         f"💵 **Общая стоимость:** {preorder['total_price']} USDT\n"
         f"📅 **Создан:** {preorder['created_at'][:19]}\n"
         f"📊 **Статус:** {status_text}\n\n"
         f"📋 **Данные пользователя:**\n"
-        f"👤 Имя: {preorder['user_data'].get('name', 'Не указано')}\n"
-        f"📞 Контакт: {preorder['user_data'].get('contact', 'Не указано')}\n"
-        f"📝 Комментарий: {preorder['user_data'].get('comment', 'Нет')}\n"
+        f"👤 Имя: {escape_markdown(preorder['user_data'].get('name', 'Не указано'))}\n"
+        f"📞 Контакт: {escape_markdown(preorder['user_data'].get('contact', 'Не указано'))}\n"
+        f"📝 Комментарий: {escape_markdown(preorder['user_data'].get('comment', 'Нет'))}\n"
     )
 
     if preorder.get('processed_at'):
@@ -5083,7 +5091,7 @@ async def confirm_preorder_handler(update: Update, context: ContextTypes.DEFAULT
             chat_id=preorder['user_id'],
             text=(
                 f"✅ **Ваш предзаказ #{preorder_id[:8]} подтверждён!**\n\n"
-                f"🛍️ **Товар:** {preorder['product_name']}\n"
+                f"🛍️ **Товар:** {escape_markdown(preorder['product_name'])}\n"
                 f"📊 **Количество:** {preorder['quantity']}\n"
                 f"💰 **Сумма:** {preorder['total_price']} USDT\n\n"
                 f"Спасибо за ожидание! Если товар требует передачи, администратор свяжется с вами."
@@ -5132,7 +5140,7 @@ async def reject_preorder_handler(update: Update, context: ContextTypes.DEFAULT_
             chat_id=preorder['user_id'],
             text=(
                 f"❌ **Ваш предзаказ #{preorder_id[:8]} отменён.**\n\n"
-                f"🛍️ **Товар:** {preorder['product_name']}\n"
+                f"🛍️ **Товар:** {escape_markdown(preorder['product_name'])}\n"
                 f"📊 **Количество:** {preorder['quantity']}\n"
                 f"💰 **Сумма возврата:** {preorder['total_price']} USDT\n"
                 f"💳 **Новый баланс:** {user_data['balance_usdt']:.2f} USDT\n\n"
@@ -5322,7 +5330,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_edit_message_text(
                     query=query,
                     text=f"🛒 **Выберите количество для покупки**\n\n"
-                         f"Товар: {product['name']}\n"
+                         f"Товар: {escape_markdown(product['name'])}\n"
                          f"Цена за единицу: {product['price']} USDT\n"
                          f"Доступно: {max_qty}",
                     parse_mode='Markdown',
@@ -5567,7 +5575,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if product:
                     await safe_edit_message_text(
                         query=query,
-                        text=f"📦 **Товар:** {product['name']}\n"
+                        text=f"📦 **Товар:** {escape_markdown(product['name'])}\n"
                              f"🆔 **ID:** `{product_id}`\n"
                              f"💰 **Цена:** {product['price']} USDT\n\n"
                              f"📤 **Теперь отправьте .txt файл для этого товара:**",
@@ -5796,7 +5804,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del context.user_data['promo_item_product']
         del context.user_data['promo_item_limit']
         product = next((p for p in catalog if p['id'] == product_id), None)
-        product_name = product['name'] if product else "Товар"
+        product_name = escape_markdown(product['name']) if product else "Товар"
         await update.message.reply_text(
             f"✅ **Промокод создан!**\n\nКод: `{code}`\nТип: товарный\nТовар: {product_name}\nЛимит: {limit if limit > 0 else 'безлимит'}",
             parse_mode='Markdown',
@@ -5905,8 +5913,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 if remove_admin(new_admin_id):
                     admin_info = users.get(str(new_admin_id), {})
-                    username = admin_info.get('username', 'unknown')
-                    first_name = admin_info.get('first_name', 'User')
+                    username = escape_markdown(admin_info.get('username', 'unknown'))
+                    first_name = escape_markdown(admin_info.get('first_name', 'User'))
                     await update.message.reply_text(
                         f"✅ **Администратор {first_name} удален!**\n\n"
                         f"👤 **Имя:** {first_name}\n"
@@ -5948,8 +5956,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         catalog.append(placeholder)
         save_catalog()
         await update.message.reply_text(
-            f"✅ **Категория '{category_name}' успешно создана!**\n\n"
-            f"📁 **Название:** {category_name}\n\n"
+            f"✅ **Категория '{escape_markdown(category_name)}' успешно создана!**\n\n"
+            f"📁 **Название:** {escape_markdown(category_name)}\n\n"
             f"Теперь вы можете добавлять подкатегории и товары в эту категорию.",
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
@@ -5974,9 +5982,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         catalog.append(placeholder)
         save_catalog()
         await update.message.reply_text(
-            f"✅ **Подкатегория '{subcategory_name}' успешно создана!**\n\n"
-            f"📁 **Категория:** {category}\n"
-            f"📂 **Подкатегория:** {subcategory_name}\n\n"
+            f"✅ **Подкатегория '{escape_markdown(subcategory_name)}' успешно создана!**\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📂 **Подкатегория:** {escape_markdown(subcategory_name)}\n\n"
             f"Теперь вы можете добавлять типы и товары в эту подкатегорию.",
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
@@ -6002,9 +6010,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         catalog.append(placeholder)
         save_catalog()
         await update.message.reply_text(
-            f"✅ **Тип '{type_name}' успешно создан в категории '{category}' (без подкатегории)!**\n\n"
-            f"📁 **Категория:** {category}\n"
-            f"📝 **Тип:** {type_name} (без подкатегории)\n\n"
+            f"✅ **Тип '{escape_markdown(type_name)}' успешно создан в категории '{escape_markdown(category)}' (без подкатегории)!**\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📝 **Тип:** {escape_markdown(type_name)} (без подкатегории)\n\n"
             f"Теперь вы можете добавлять товары в этот тип через массовую загрузку.",
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
@@ -6031,10 +6039,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         catalog.append(placeholder)
         save_catalog()
         await update.message.reply_text(
-            f"✅ **Тип '{type_name}' успешно создан!**\n\n"
-            f"📁 **Категория:** {category}\n"
-            f"📂 **Подкатегория:** {subcategory}\n"
-            f"📝 **Тип:** {type_name}\n\n"
+            f"✅ **Тип '{escape_markdown(type_name)}' успешно создан!**\n\n"
+            f"📁 **Категория:** {escape_markdown(category)}\n"
+            f"📂 **Подкатегория:** {escape_markdown(subcategory)}\n"
+            f"📝 **Тип:** {escape_markdown(type_name)}\n\n"
             f"Теперь вы можете добавлять товары в этот тип через массовую загрузку.",
             parse_mode='Markdown',
             reply_markup=get_category_management_keyboard()
@@ -6105,12 +6113,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             params['price'] = price
             params['description'] = description
             text_msg = f"✅ **Параметры установлены!**\n\n"
-            text_msg += f"📁 **Категория:** {params['category']}\n"
+            text_msg += f"📁 **Категория:** {escape_markdown(params['category'])}\n"
             if params.get('subcategory'):
-                text_msg += f"📂 Подкатегория: {params['subcategory']}\n"
-            text_msg += f"📝 **Тип:** {params['type']}\n"
+                text_msg += f"📂 Подкатегория: {escape_markdown(params['subcategory'])}\n"
+            text_msg += f"📝 **Тип:** {escape_markdown(params['type'])}\n"
             text_msg += f"💰 **Цена:** {price} USDT\n"
-            text_msg += f"📝 **Описание:** {description}\n\n"
+            text_msg += f"📝 **Описание:** {escape_markdown(description)}\n\n"
             text_msg += "📤 **Теперь отправляйте .txt файлы (можно несколько сообщений):**\n"
             text_msg += "Каждый файл будет добавлен в набор для этого типа.\n\n"
             text_msg += "Для завершения нажмите '🔙 В админку'"
@@ -6150,7 +6158,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_catalog()
                 await update.message.reply_text(
                     f"✅ **Количество товара обновлено!**\n\n"
-                    f"🛍️ **Товар:** {product_name}\n"
+                    f"🛍️ **Товар:** {escape_markdown(product_name)}\n"
                     f"📦 **Было:** {old_quantity} шт.\n"
                     f"📊 **Стало:** {new_quantity} шт.\n"
                     f"🆔 **ID товара:** `{product_id}`",
