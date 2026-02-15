@@ -4757,6 +4757,11 @@ async def preorder_product_handler(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     await safe_answer_query(query)
 
+    # Очищаем все состояния, связанные с вводом, чтобы избежать конфликтов
+    for key in list(context.user_data.keys()):
+        if key.startswith('awaiting_') or key in ['preorder_product', 'preorder_quantity', 'preorder_total', 'preorder_product_id']:
+            del context.user_data[key]
+
     product = next((p for p in catalog if p['id'] == product_id), None)
     if not product:
         await safe_answer_query(query, "❌ Товар не найден", show_alert=True)
@@ -4814,6 +4819,8 @@ async def process_preorder_quantity(update: Update, context: ContextTypes.DEFAUL
         del context.user_data['awaiting_preorder_quantity']
         return
 
+    # Удаляем состояние ожидания количества и устанавливаем ожидание данных
+    del context.user_data['awaiting_preorder_quantity']
     context.user_data['preorder_product'] = product_id
     context.user_data['preorder_quantity'] = quantity
     context.user_data['preorder_total'] = total
@@ -4840,8 +4847,13 @@ async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     user_data = ensure_user_registered(user_id)
 
-    if not context.user_data.get('preorder_product') or not context.user_data.get('preorder_quantity'):
+    # Проверяем наличие всех необходимых данных в контексте
+    if not (context.user_data.get('preorder_product') and context.user_data.get('preorder_quantity') and context.user_data.get('preorder_total')):
         await update.message.reply_text("❌ Ошибка: данные предзаказа не найдены. Начните заново.")
+        # Очищаем возможные остатки
+        for key in ['preorder_product', 'preorder_quantity', 'preorder_total', 'preorder_product_id', 'awaiting_preorder_data']:
+            if key in context.user_data:
+                del context.user_data[key]
         return
 
     product_id = context.user_data['preorder_product']
@@ -4946,12 +4958,10 @@ async def process_preorder_data(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as e:
             logger.error(f"Не удалось уведомить админа {admin_id}: {e}")
 
-    # Очищаем данные
-    del context.user_data['preorder_product']
-    del context.user_data['preorder_quantity']
-    del context.user_data['preorder_total']
-    del context.user_data['preorder_product_id']
-    del context.user_data['awaiting_preorder_data']
+    # Очищаем данные пользователя
+    for key in ['preorder_product', 'preorder_quantity', 'preorder_total', 'preorder_product_id', 'awaiting_preorder_data']:
+        if key in context.user_data:
+            del context.user_data[key]
 
 # ========== АДМИН ФУНКЦИИ ДЛЯ ПРЕДЗАКАЗОВ ==========
 async def admin_preorders_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
